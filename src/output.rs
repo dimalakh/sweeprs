@@ -84,7 +84,7 @@ pub fn badge(safety: SafetyLevel) -> String {
 
 /// Cut `text` to `max` display columns, keeping the end, which for a path is
 /// the part that names it.
-fn truncate_start(text: &str, max: usize) -> String {
+pub fn truncate_start(text: &str, max: usize) -> String {
     if text.width() <= max {
         return text.to_owned();
     }
@@ -103,7 +103,7 @@ fn truncate_start(text: &str, max: usize) -> String {
 }
 
 /// Cut `text` to `max` display columns, keeping the start.
-fn truncate_end(text: &str, max: usize) -> String {
+pub fn truncate_end(text: &str, max: usize) -> String {
     if text.width() <= max {
         return text.to_owned();
     }

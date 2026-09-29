@@ -4,10 +4,11 @@ use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
+use crate::output;
 use crate::scanner::entry::SafetyLevel;
 use crate::tui::app::App;
 use crate::tui::theme;
-use crate::tui::tree::{CheckState, RowRef};
+use crate::tui::tree::{CheckState, EntryNode, RowRef};
 use crate::util;
 use crate::virtual_entry;
 
@@ -21,6 +22,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     f.render_widget(block, area);
 
     let viewport_height = inner.height as usize;
+    let width = inner.width as usize;
     if viewport_height == 0 {
         return;
     }
@@ -54,10 +56,12 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
 
             match *row {
                 RowRef::Category(ci) => {
-                    render_category_row(&app.tree, ci, is_cursor, total_reclaimable)
+                    render_category_row(&app.tree, ci, is_cursor, total_reclaimable, width)
                 }
-                RowRef::Group(ci, gi) => render_group_row(&app.tree, ci, gi, is_cursor),
-                RowRef::Entry(ci, gi, ei) => render_entry_row(&app.tree, ci, gi, ei, is_cursor),
+                RowRef::Group(ci, gi) => render_group_row(&app.tree, ci, gi, is_cursor, width),
+                RowRef::Entry(ci, gi, ei) => {
+                    render_entry_row(&app.tree, ci, gi, ei, is_cursor, width)
+                }
             }
         })
         .collect();
@@ -89,53 +93,102 @@ fn size_bar(
     Span::styled(bar, Style::default().fg(fill_color))
 }
 
+/// Right-hand columns: item count, size, share bar.
+const COUNT_COL: usize = 9;
+const SIZE_COL: usize = 10;
+const RIGHT_COLS: usize = COUNT_COL + 2 + SIZE_COL + 2 + BAR_WIDTH + 1;
+
+fn count_label(count: usize, always: bool) -> String {
+    match count {
+        1 if !always => String::new(),
+        1 => "1 item".to_owned(),
+        n => format!("{n} items"),
+    }
+}
+
+fn check_box(state: CheckState) -> &'static str {
+    match state {
+        CheckState::Checked => "[x]",
+        CheckState::Partial => "[-]",
+        CheckState::Unchecked => "[ ]",
+    }
+}
+
+/// One tree row: a prefix, a name that takes whatever width is left, then
+/// count, size and bar in fixed columns so they line up down the panel.
+struct Row<'a> {
+    prefix: String,
+    prefix_style: Style,
+    name: &'a str,
+    name_style: Style,
+    /// Paths keep their end when shortened; labels keep their start.
+    keep_end: bool,
+    count: String,
+    size: u64,
+    size_style: Style,
+    bar: Span<'static>,
+}
+
+impl Row<'_> {
+    fn render(self, width: usize, is_cursor: bool) -> Line<'static> {
+        use unicode_width::UnicodeWidthStr;
+
+        let name_room = width.saturating_sub(self.prefix.width() + RIGHT_COLS + 1);
+        let name = if self.keep_end {
+            output::truncate_start(self.name, name_room)
+        } else {
+            output::truncate_end(self.name, name_room)
+        };
+        let fill = name_room.saturating_sub(name.width());
+
+        let spans = vec![
+            Span::styled(self.prefix, self.prefix_style),
+            Span::styled(name, self.name_style),
+            Span::raw(" ".repeat(fill + 1)),
+            Span::styled(
+                format!("{:>COUNT_COL$}  ", self.count),
+                Style::default().fg(theme::DIM),
+            ),
+            Span::styled(
+                format!("{:>SIZE_COL$}  ", util::human_size(self.size)),
+                self.size_style,
+            ),
+            self.bar,
+        ];
+
+        let style = if is_cursor {
+            Style::default().bg(theme::SURFACE)
+        } else {
+            Style::default()
+        };
+        Line::from(spans).style(style)
+    }
+}
+
 fn render_category_row(
     tree: &crate::tui::tree::Tree,
     ci: usize,
     is_cursor: bool,
     total_reclaimable: u64,
+    width: usize,
 ) -> Line<'static> {
     let cat = &tree.categories[ci];
-    let arrow = if cat.expanded { "v" } else { ">" };
-    let check = match tree.cached_category_check_state(ci) {
-        CheckState::Checked => "[x]",
-        CheckState::Partial => "[-]",
-        CheckState::Unchecked => "[ ]",
-    };
+    let arrow = if cat.expanded { "▾" } else { "▸" };
+    let check = check_box(tree.cached_category_check_state(ci));
     let safety_color = safety_to_color(cat.category.default_safety());
 
-    let mut spans = vec![
-        Span::styled(
-            format!(" {arrow} {check} "),
-            Style::default().fg(theme::ACCENT),
-        ),
-        Span::styled(
-            format!("{}", cat.category),
-            Style::default().fg(theme::FG).bold(),
-        ),
-    ];
-
-    let size_str = util::human_size(cat.total_size);
-    let count_str = format!("  ({} items)", cat.entry_count);
-    spans.push(Span::styled(count_str, Style::default().fg(theme::DIM)));
-    spans.push(Span::styled(
-        format!("  {size_str}  "),
-        Style::default().fg(safety_color).bold(),
-    ));
-    spans.push(size_bar(
-        cat.total_size,
-        total_reclaimable,
-        BAR_WIDTH,
-        safety_color,
-    ));
-
-    let style = if is_cursor {
-        Style::default().bg(theme::SURFACE)
-    } else {
-        Style::default()
-    };
-
-    Line::from(spans).style(style)
+    Row {
+        prefix: format!(" {arrow} {check} "),
+        prefix_style: Style::default().fg(theme::ACCENT),
+        name: &cat.category.to_string(),
+        name_style: Style::default().fg(theme::FG).bold(),
+        keep_end: false,
+        count: count_label(cat.entry_count, true),
+        size: cat.total_size,
+        size_style: Style::default().fg(safety_color).bold(),
+        bar: size_bar(cat.total_size, total_reclaimable, BAR_WIDTH, safety_color),
+    }
+    .render(width, is_cursor)
 }
 
 fn render_group_row(
@@ -143,46 +196,31 @@ fn render_group_row(
     ci: usize,
     gi: usize,
     is_cursor: bool,
+    width: usize,
 ) -> Line<'static> {
     let cat = &tree.categories[ci];
     let group = &cat.groups[gi];
-    let arrow = if group.expanded { "v" } else { ">" };
-    let check = match tree.cached_group_check_state(ci, gi) {
-        CheckState::Checked => "[x]",
-        CheckState::Partial => "[-]",
-        CheckState::Unchecked => "[ ]",
+    let arrow = if group.expanded { "▾" } else { "▸" };
+    let selectable = group.entries.iter().any(EntryNode::selectable);
+    let check = if selectable {
+        check_box(tree.cached_group_check_state(ci, gi))
+    } else {
+        "[!]"
     };
     let safety_color = safety_to_color(group.safety);
 
-    let mut spans = vec![
-        Span::styled(
-            format!("   {arrow} {check} "),
-            Style::default().fg(theme::ACCENT),
-        ),
-        Span::styled(group.name.clone(), Style::default().fg(theme::FG)),
-    ];
-
-    let count_str = format!("  ({})", group.entries.len());
-    let size_str = util::human_size(group.total_size);
-    spans.push(Span::styled(count_str, Style::default().fg(theme::DIM)));
-    spans.push(Span::styled(
-        format!("  {size_str}  "),
-        Style::default().fg(safety_color).bold(),
-    ));
-    spans.push(size_bar(
-        group.total_size,
-        cat.total_size,
-        BAR_WIDTH,
-        safety_color,
-    ));
-
-    let style = if is_cursor {
-        Style::default().bg(theme::SURFACE)
-    } else {
-        Style::default()
-    };
-
-    Line::from(spans).style(style)
+    Row {
+        prefix: format!("   {arrow} {check} "),
+        prefix_style: Style::default().fg(theme::ACCENT),
+        name: &group.name,
+        name_style: Style::default().fg(theme::FG),
+        keep_end: false,
+        count: count_label(group.entries.len(), false),
+        size: group.total_size,
+        size_style: Style::default().fg(safety_color).bold(),
+        bar: size_bar(group.total_size, cat.total_size, BAR_WIDTH, safety_color),
+    }
+    .render(width, is_cursor)
 }
 
 fn render_entry_row(
@@ -191,33 +229,29 @@ fn render_entry_row(
     gi: usize,
     ei: usize,
     is_cursor: bool,
+    width: usize,
 ) -> Line<'static> {
     let group = &tree.categories[ci].groups[gi];
     let entry = &group.entries[ei];
-    let check = if entry.checked { "[x]" } else { "[ ]" };
+    let check = match (entry.selectable(), entry.checked) {
+        (false, _) => "[!]",
+        (true, true) => "[x]",
+        (true, false) => "[ ]",
+    };
     let safety_color = safety_to_color(entry.safety);
 
-    let label = virtual_entry::display(&entry.path);
-
-    let size_str = util::human_size(entry.size);
-
-    let spans = vec![
-        Span::styled(
-            format!("       {check} "),
-            Style::default().fg(safety_color),
-        ),
-        Span::styled(label, Style::default().fg(theme::FG)),
-        Span::styled(format!("  {size_str}  "), Style::default().fg(safety_color)),
-        size_bar(entry.size, group.total_size, BAR_WIDTH, safety_color),
-    ];
-
-    let style = if is_cursor {
-        Style::default().bg(theme::SURFACE)
-    } else {
-        Style::default()
-    };
-
-    Line::from(spans).style(style)
+    Row {
+        prefix: format!("       {check} "),
+        prefix_style: Style::default().fg(safety_color),
+        name: &virtual_entry::display(&entry.path),
+        name_style: Style::default().fg(theme::FG),
+        keep_end: true,
+        count: String::new(),
+        size: entry.size,
+        size_style: Style::default().fg(safety_color),
+        bar: size_bar(entry.size, group.total_size, BAR_WIDTH, safety_color),
+    }
+    .render(width, is_cursor)
 }
 
 fn safety_to_color(safety: SafetyLevel) -> ratatui::style::Color {
