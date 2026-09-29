@@ -4,7 +4,7 @@ version = "0.6.0"
 edition = "2024"
 description = "Fast disk cleanup TUI"
 license = "MIT"
-rust-version = "1.85.0"
+rust-version = "1.98"
 
 [dependencies]
 anyhow = "1"
@@ -23,7 +23,7 @@ memchr = "2"
 yansi = "1"
 humansize = "2"
 indicatif = { version = "0.18", features = ["rayon"] }
-dirs = "6"
+dirs = "7"
 chrono = { version = "0.4", features = ["clock"] }
 sysinfo = "0.36"
 ctrlc = { version = "3", features = ["termination"] }
@@ -32,7 +32,7 @@ clap_complete = "4"
 tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.30", default-features = false, features = ["signal"] }
+nix = { version = "0.31", default-features = false, features = ["signal"] }
 
 [lints.rust]
 unsafe_code = "deny"

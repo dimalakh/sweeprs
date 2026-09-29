@@ -65,7 +65,7 @@ INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/salamaasho
 
 ### Build from source
 
-Requires Rust 1.85+ (nightly recommended for edition 2024).
+Requires Rust 1.98+ (stable).
 
 ```bash
 cargo install --path .
