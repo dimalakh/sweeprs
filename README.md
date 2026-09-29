@@ -288,7 +288,7 @@ sweeprs config --path
 | Installed Dependencies | `deps` | Safe | node_modules/, .venv/, vendor/, CocoaPods `Pods/`, Terraform providers |
 | Browser Caches | `browser` | Safe | Chrome, Firefox, Brave, Edge, Safari (macOS) caches |
 | IDE Caches | `ide` | Safe | VS Code, Cursor, JetBrains, Zed, Sublime, Xcode (macOS) caches, workspace state for deleted folders, `state.vscdb` rollback copies, aged local file history |
-| App Caches | `app-cache` | Safe | Slack, Spotify, Discord, Teams, Electron app caches |
+| App Caches | `app-cache` | Safe | Slack, Spotify, Discord, Teams, Electron app caches (Local Storage and IndexedDB are Caution: removing them signs you out) |
 | Rust Toolchains | `toolchain` | Caution | Old rustup toolchains, Python/Node/Ruby versions, Conda environments |
 | Docker | `docker` | Caution | Images, containers, volumes, build cache |
 | Log Files | `logs` | Caution | System logs in /var/log, diagnostic reports, ~/Library/Logs (macOS) |
