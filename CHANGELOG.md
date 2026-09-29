@@ -1,6 +1,31 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [0.7.0] - 2026-09-29
+
+### Bug Fixes
+
+- Stop a timed-out git gc and everything it spawned
+- Never select or absorb an entry a rule refused to clean
+- Resolve a clone and its worktrees to one git store
+- *(ide)* Stop offering Zed and JetBrains data dirs as caches
+- *(agents)* Judge session state by session id and worktrees by git
+- Small rule corrections for macOS and project caches
+- Stop auto-cleaning Electron sign-in state as a Safe cache
+- *(agents)* Follow where each agent actually stores sessions now
+
+### Other
+
+- Speedup and performance imporvements
+- Move to Rust stable 1.98 and update dependencies
+
+### Styling
+
+- Collapse nested ifs and use whole-unit Durations
+
+### Miscellaneous Tasks
+
+- Stop tracking personal Claude settings
 ## [0.6.0] - 2026-07-12
 
 ### Features
