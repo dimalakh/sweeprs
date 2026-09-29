@@ -41,6 +41,14 @@ pub struct EntryNode {
     search_text: String,
 }
 
+impl EntryNode {
+    /// `Error` entries report a failed scan or a path a rule refuses to let go
+    /// (an agent worktree with unpushed work). They are shown, never selected.
+    pub fn selectable(&self) -> bool {
+        self.safety != SafetyLevel::Error
+    }
+}
+
 pub struct Tree {
     pub categories: Vec<CategoryNode>,
     /// Cached visible rows, shared via Rc to avoid cloning on every access.
@@ -280,20 +288,24 @@ impl Tree {
             RowRef::Category(ci) => {
                 let new_state = self.category_check_state(ci) != CheckState::Checked;
                 for group in &mut self.categories[ci].groups {
-                    for entry in &mut group.entries {
+                    for entry in group.entries.iter_mut().filter(|e| e.selectable()) {
                         entry.checked = new_state;
                     }
                 }
             }
             RowRef::Group(ci, gi) => {
                 let new_state = self.group_check_state(ci, gi) != CheckState::Checked;
-                for entry in &mut self.categories[ci].groups[gi].entries {
+                for entry in self.categories[ci].groups[gi]
+                    .entries
+                    .iter_mut()
+                    .filter(|e| e.selectable())
+                {
                     entry.checked = new_state;
                 }
             }
             RowRef::Entry(ci, gi, ei) => {
                 let entry = &mut self.categories[ci].groups[gi].entries[ei];
-                entry.checked = !entry.checked;
+                entry.checked = entry.selectable() && !entry.checked;
             }
         }
         self.invalidate_checks();
@@ -338,7 +350,7 @@ impl Tree {
         for cat in &self.categories {
             for group in &cat.groups {
                 for entry in &group.entries {
-                    if entry.checked {
+                    if entry.checked && entry.selectable() {
                         result.push(ScannedEntry {
                             path: entry.path.clone(),
                             size: entry.size,
@@ -388,7 +400,7 @@ impl Tree {
 fn compute_group_check_state(group: &GroupNode) -> CheckState {
     let mut any_checked = false;
     let mut any_unchecked = false;
-    for entry in &group.entries {
+    for entry in group.entries.iter().filter(|e| e.selectable()) {
         if entry.checked {
             any_checked = true;
         } else {
@@ -428,5 +440,55 @@ fn compute_category_check_state_from_groups(
         CheckState::Checked
     } else {
         CheckState::Unchecked
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(path: &str, safety: SafetyLevel) -> ScannedEntry {
+        ScannedEntry {
+            path: PathBuf::from(path),
+            size: 10,
+            category: Category::AgentSession,
+            safety,
+            description: "Agent worktrees".to_owned(),
+            item_count: None,
+        }
+    }
+
+    #[test]
+    fn selecting_a_whole_category_never_picks_up_a_refused_path() {
+        let result = ScanResult {
+            entries: vec![
+                entry("/home/me/.cursor/worktrees/app/pushed", SafetyLevel::Danger),
+                entry(
+                    "/home/me/.cursor/worktrees/app/unpushed",
+                    SafetyLevel::Error,
+                ),
+            ],
+            total_size: 20,
+            disk_info: None,
+            scan_duration_secs: None,
+        };
+        let mut tree = Tree::from_scan_result(&result);
+
+        tree.toggle(RowRef::Category(0));
+        let selected = tree.selected_entries();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(
+            selected[0].path,
+            PathBuf::from("/home/me/.cursor/worktrees/app/pushed")
+        );
+        assert_eq!(tree.category_check_state(0), CheckState::Checked);
+
+        let refused = tree.categories[0].groups[0]
+            .entries
+            .iter()
+            .position(|e| e.safety == SafetyLevel::Error)
+            .expect("refused entry");
+        tree.toggle(RowRef::Entry(0, 0, refused));
+        assert_eq!(tree.selected_entries().len(), 1);
     }
 }

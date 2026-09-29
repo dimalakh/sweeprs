@@ -9,7 +9,7 @@ use crate::config::Config;
 use crate::rules;
 use crate::scanner;
 use crate::scanner::ScanUpdate;
-use crate::scanner::entry::{ScanResult, ScannedEntry};
+use crate::scanner::entry::{SafetyLevel, ScanResult, ScannedEntry};
 use crate::tui::tree::{RowRef, Tree};
 use crate::tui::views::View;
 use crate::virtual_entry;
@@ -398,6 +398,9 @@ impl App {
 
     fn execute_deletion(&mut self) {
         for entry in &self.selected_for_deletion {
+            if entry.safety == SafetyLevel::Error {
+                continue;
+            }
             if virtual_entry::is_virtual(&entry.path) {
                 let _ = virtual_entry::clean(
                     &entry.path.display().to_string(),

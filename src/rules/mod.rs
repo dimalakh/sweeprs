@@ -43,12 +43,13 @@ pub mod toolchain;
 pub mod trash;
 pub mod virtualization;
 
+use std::path::PathBuf;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 
 use crate::config::Config;
-use crate::scanner::entry::{Category, DiskInfo, ScanResult, ScannedEntry};
+use crate::scanner::entry::{Category, DiskInfo, SafetyLevel, ScanResult, ScannedEntry};
 
 pub enum ScanUpdate {
     Started {
@@ -148,6 +149,7 @@ const PROJECT_INDEX_CATEGORIES: &[Category] = &[
     Category::BuildArtifact,
     Category::InstalledDeps,
     Category::StaleProject,
+    Category::AgentSession,
 ];
 
 /// Categories whose rules use the `CLI_CACHE`.
@@ -214,7 +216,23 @@ fn warm_caches_all() {
 /// inner one: there, dropping the inner entry would push the user towards the
 /// riskier action to reclaim the same bytes, so both are kept and the inner size
 /// is deducted from the outer.
+///
+/// An `Error` entry on a real path is a rule refusing to let that path go (an
+/// agent worktree holding unpushed work). It is never absorbed, and any other
+/// entry at that path or above it is dropped, since cleaning it would delete
+/// what the refusal protects.
 pub fn deduplicate_entries(mut entries: Vec<ScannedEntry>) -> Vec<ScannedEntry> {
+    let refused: Vec<PathBuf> = entries
+        .iter()
+        .filter(|e| e.safety == SafetyLevel::Error && !crate::virtual_entry::is_virtual(&e.path))
+        .map(|e| e.path.clone())
+        .collect();
+    if !refused.is_empty() {
+        entries.retain(|e| {
+            e.safety == SafetyLevel::Error || !refused.iter().any(|kept| kept.starts_with(&e.path))
+        });
+    }
+
     entries.sort_by(|a, b| {
         a.path
             .cmp(&b.path)
@@ -240,7 +258,7 @@ pub fn deduplicate_entries(mut entries: Vec<ScannedEntry>) -> Vec<ScannedEntry> 
     let mut ancestors: Vec<usize> = Vec::new();
 
     for entry in entries {
-        if crate::virtual_entry::is_virtual(&entry.path) {
+        if entry.safety == SafetyLevel::Error || crate::virtual_entry::is_virtual(&entry.path) {
             kept.push(entry);
             continue;
         }
@@ -483,8 +501,6 @@ pub(crate) use cache_rule;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scanner::entry::SafetyLevel;
-    use std::path::PathBuf;
 
     fn entry(path: &str, size: u64, safety: SafetyLevel) -> ScannedEntry {
         ScannedEntry {
@@ -563,5 +579,27 @@ mod tests {
             entry("git-gc:/home/me/proj/nested", 50, SafetyLevel::Caution),
         ]);
         assert_eq!(kept.len(), 2);
+    }
+
+    #[test]
+    fn a_refusal_is_never_absorbed_and_vetoes_what_would_delete_it() {
+        let kept = deduplicate_entries(vec![
+            entry("/home/me/.cursor/worktrees", 900, SafetyLevel::Safe),
+            entry("/home/me/.cursor/worktrees/app/wip", 0, SafetyLevel::Error),
+            entry(
+                "/home/me/.cursor/worktrees/app/wip",
+                500,
+                SafetyLevel::Caution,
+            ),
+            entry("/home/me/.cursor/worktrees-old", 10, SafetyLevel::Safe),
+        ]);
+        assert_eq!(
+            paths(&kept),
+            [
+                "/home/me/.cursor/worktrees/app/wip",
+                "/home/me/.cursor/worktrees-old"
+            ]
+        );
+        assert_eq!(kept[0].safety, SafetyLevel::Error);
     }
 }
