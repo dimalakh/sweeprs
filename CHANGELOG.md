@@ -1,6 +1,18 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [0.8.0] - 2026-09-29
+
+### Features
+
+- Compact, width-aware scan and clean listings
+- Consistent progress and summaries while cleaning
+- *(tui)* Aligned tree columns and a details panel worth reading
+
+### Bug Fixes
+
+- Name generic cache entries instead of repeating their path
+- Decide the clean prompt's safe and caution answers per entry
 ## [0.7.0] - 2026-09-29
 
 ### Bug Fixes
