@@ -32,7 +32,7 @@ const CACHE_TTL_SECS: u64 = 3600; // 1 hour
 
 /// Bumped whenever the walk changes what it records, so a cache written by an
 /// older build is discarded instead of silently narrowing a scan.
-const CACHE_SCHEMA_VERSION: u32 = 4;
+const CACHE_SCHEMA_VERSION: u32 = 5;
 
 /// Default project search roots (relative to home directory).
 const DEFAULT_SEARCH_ROOTS: &[&str] = &["Workspace", "Projects", "Developer", "Code", "src", "dev"];
@@ -336,6 +336,12 @@ impl ProjectIndex {
     }
 }
 
+/// Whether a directory of this name is build or dependency output that a tool
+/// regenerates, as opposed to something a person put there.
+pub fn is_disposable_dir(name: &str) -> bool {
+    SKIP_DIRS.contains(name)
+}
+
 /// The git directory a working tree uses, and the store it ultimately shares.
 ///
 /// For a plain clone both are `<root>/.git`. For a linked worktree the `.git`
@@ -345,8 +351,11 @@ pub fn resolve_git_dir(root: &Path) -> Option<PathBuf> {
     let dot_git = root.join(".git");
     let meta = dot_git.symlink_metadata().ok()?;
 
+    // Both branches canonicalize: a clone reached through a symlinked scan
+    // root and a worktree whose `gitdir:` names the real path must agree, or
+    // the one store is gc'd and counted twice.
     if meta.is_dir() {
-        return Some(dot_git);
+        return Some(dot_git.canonicalize().unwrap_or(dot_git));
     }
 
     let contents = std::fs::read_to_string(&dot_git).ok()?;
@@ -436,5 +445,37 @@ fn walk_dir(dir: &Path, depth: usize, dirs: &mut Vec<IndexedDir>, git_roots: &mu
 
     for subdir in subdirs {
         walk_dir(&subdir, depth + 1, dirs, git_roots);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_clone_and_its_worktree_resolve_to_one_store_through_a_symlink() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let real = tmp.path().join("real");
+        let clone = real.join("app");
+        std::fs::create_dir_all(clone.join(".git/worktrees/feature")).expect("store");
+
+        let linked = tmp.path().join("linked");
+        std::os::unix::fs::symlink(&real, &linked).expect("symlink");
+
+        let worktree = tmp.path().join("feature");
+        std::fs::create_dir(&worktree).expect("worktree");
+        std::fs::write(
+            worktree.join(".git"),
+            format!(
+                "gitdir: {}\n",
+                clone.join(".git/worktrees/feature").display()
+            ),
+        )
+        .expect("gitdir file");
+
+        assert_eq!(
+            resolve_git_dir(&linked.join("app")),
+            resolve_git_dir(&worktree)
+        );
     }
 }
