@@ -171,7 +171,14 @@ pub fn busy_reason(git_dir: &Path) -> Option<&'static str> {
     let marker_in = |dir: &Path| {
         IN_PROGRESS
             .iter()
-            .find(|(marker, _)| dir.join(marker).exists())
+            .find(|(marker, _)| {
+                let path = dir.join(marker);
+                if *marker == "gc.pid" {
+                    gc_pid_is_live(&path)
+                } else {
+                    path.exists()
+                }
+            })
             .map(|(_, reason)| *reason)
     };
 
@@ -186,6 +193,20 @@ pub fn busy_reason(git_dir: &Path) -> Option<&'static str> {
         .ok()?
         .flatten()
         .find_map(|entry| marker_in(&entry.path()))
+}
+
+/// Git itself ignores a `gc.pid` older than this; a gc killed outright leaves
+/// one behind, and honouring it forever would put the repo off limits for good.
+const GC_PID_STALE_AFTER: Duration = Duration::from_secs(12 * 60 * 60);
+
+fn gc_pid_is_live(path: &Path) -> bool {
+    let Ok(meta) = path.metadata() else {
+        return false;
+    };
+    meta.modified()
+        .ok()
+        .and_then(|m| SystemTime::now().duration_since(m).ok())
+        .is_none_or(|age| age < GC_PID_STALE_AFTER)
 }
 
 /// A name for the repository behind an object store.
@@ -603,6 +624,25 @@ size-garbage: 215552
 
         std::fs::write(worktree_state.join("MERGE_HEAD"), b"abc").expect("merge state");
         assert_eq!(busy_reason(&store), Some("a merge is in progress"));
+    }
+
+    #[test]
+    fn a_gc_pid_left_by_a_killed_gc_stops_blocking_the_repo() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let git_dir = tmp.path().join(".git");
+        std::fs::create_dir_all(&git_dir).expect("git dir");
+        let pid_file = git_dir.join("gc.pid");
+        std::fs::write(&pid_file, b"4242 host").expect("gc.pid");
+
+        assert_eq!(busy_reason(&git_dir), Some("a gc is already running"));
+
+        let long_ago = SystemTime::now() - Duration::from_secs(13 * 60 * 60);
+        std::fs::File::options()
+            .write(true)
+            .open(&pid_file)
+            .and_then(|f| f.set_modified(long_ago))
+            .expect("backdate gc.pid");
+        assert!(busy_reason(&git_dir).is_none());
     }
 
     #[test]
