@@ -5,19 +5,6 @@ use crate::scanner::walker;
 use std::time::SystemTime;
 
 cache_rule!(
-    VsCodeCacheRule,
-    "VS Code cache",
-    Category::IdeCache,
-    SafetyLevel::Safe,
-    "Library/Application Support/Code/Cache",
-    "Library/Application Support/Code/CachedData",
-    "Library/Application Support/Code/CachedExtensions",
-    ".config/Code/Cache",
-    ".config/Code/CachedData",
-    ".config/Code/CachedExtensionVSIXs"
-);
-
-cache_rule!(
     XcodeCacheRule,
     "Xcode caches",
     Category::IdeCache,
@@ -58,13 +45,10 @@ impl CleanupRule for JetBrainsCacheRule {
         let macos_caches = home.join("Library/Caches");
         scan_jetbrains_dir(&macos_caches, &prefixes, &mut entries);
 
-        // Linux: ~/.cache/JetBrains*
+        // Linux: ~/.cache/JetBrains*. Not ~/.local/share/JetBrains, which
+        // holds installed plugins and the IDEs Toolbox manages.
         let linux_caches = home.join(".cache");
         scan_jetbrains_dir(&linux_caches, &prefixes, &mut entries);
-
-        // Linux: ~/.local/share/JetBrains* (IDE configs/indices)
-        let linux_local = home.join(".local/share");
-        scan_jetbrains_dir(&linux_local, &prefixes, &mut entries);
 
         entries
     }
@@ -102,24 +86,12 @@ fn scan_jetbrains_dir(dir: &std::path::Path, prefixes: &[&str], entries: &mut Ve
 }
 
 cache_rule!(
-    CursorCacheRule,
-    "Cursor cache",
-    Category::IdeCache,
-    SafetyLevel::Safe,
-    "Library/Application Support/Cursor/Cache",
-    "Library/Application Support/Cursor/CachedData",
-    ".config/Cursor/Cache",
-    ".config/Cursor/CachedData"
-);
-
-cache_rule!(
     ZedCacheRule,
     "Zed cache",
     Category::IdeCache,
     SafetyLevel::Safe,
     "Library/Caches/dev.zed.Zed",
-    ".cache/zed",
-    ".local/share/zed"
+    ".cache/zed"
 );
 
 cache_rule!(
@@ -157,10 +129,9 @@ cache_rule!(
 
 pub fn rules() -> Vec<Box<dyn CleanupRule>> {
     vec![
-        Box::new(VsCodeCacheRule),
+        Box::new(EditorCacheRule),
         Box::new(XcodeCacheRule),
         Box::new(JetBrainsCacheRule),
-        Box::new(CursorCacheRule),
         Box::new(ZedCacheRule),
         Box::new(SublimeCacheRule),
         Box::new(XcodeProductsRule),
@@ -181,15 +152,77 @@ pub fn rules() -> Vec<Box<dyn CleanupRule>> {
 /// here belongs to folders that stopped existing months ago.
 pub struct OrphanedWorkspaceStorageRule;
 
-const EDITOR_SUPPORT_DIRS: &[&str] = &[
+pub const EDITOR_SUPPORT_DIRS: &[&str] = &[
     "Library/Application Support/Code",
+    "Library/Application Support/Code - Insiders",
+    "Library/Application Support/VSCodium",
     "Library/Application Support/Cursor",
     "Library/Application Support/Windsurf",
     "Library/Application Support/Antigravity",
+    "Library/Application Support/Kiro",
+    "Library/Application Support/Trae",
     ".config/Code",
+    ".config/Code - Insiders",
+    ".config/VSCodium",
     ".config/Cursor",
     ".config/Windsurf",
+    ".config/Antigravity",
+    ".config/Kiro",
+    ".config/Trae",
 ];
+
+/// Chromium and VS Code caches every fork of the editor rebuilds on launch.
+const EDITOR_CACHE_SUBDIRS: &[&str] = &[
+    "Cache",
+    "CachedData",
+    "CachedExtensionVSIXs",
+    "Code Cache",
+    "GPUCache",
+];
+
+/// Caches of VS Code and every fork listed in `EDITOR_SUPPORT_DIRS`.
+pub struct EditorCacheRule;
+
+impl CleanupRule for EditorCacheRule {
+    fn name(&self) -> &'static str {
+        "Editor caches"
+    }
+
+    fn category(&self) -> Category {
+        Category::IdeCache
+    }
+
+    fn scan(&self, _config: &Config) -> Vec<ScannedEntry> {
+        let home = dirs::home_dir().unwrap_or_default();
+
+        EDITOR_SUPPORT_DIRS
+            .iter()
+            .flat_map(|support| {
+                let editor = std::path::Path::new(support)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                let base = home.join(support);
+                EDITOR_CACHE_SUBDIRS.iter().filter_map(move |subdir| {
+                    let path = base.join(subdir);
+                    if !path.is_dir() {
+                        return None;
+                    }
+                    let size = walker::dir_size(&path);
+                    (size > 0).then(|| ScannedEntry {
+                        path,
+                        size,
+                        category: Category::IdeCache,
+                        safety: SafetyLevel::Safe,
+                        description: format!("{editor} {subdir}"),
+                        item_count: None,
+                    })
+                })
+            })
+            .collect()
+    }
+}
 
 /// The folder a workspace-storage directory belongs to, if it names one.
 fn workspace_folder(dir: &std::path::Path) -> Option<std::path::PathBuf> {
@@ -391,7 +424,7 @@ impl CleanupRule for EditorLocalHistoryRule {
 
     fn scan(&self, config: &Config) -> Vec<ScannedEntry> {
         let home = dirs::home_dir().unwrap_or_default();
-        let cutoff = std::time::Duration::from_secs(config.categories.agent_session_days * 86_400);
+        let cutoff = std::time::Duration::from_secs(config.categories.editor_history_days * 86_400);
 
         EDITOR_SUPPORT_DIRS
             .iter()
@@ -411,7 +444,7 @@ impl CleanupRule for EditorLocalHistoryRule {
                     .file_name()?
                     .to_string_lossy()
                     .to_string();
-                let days = config.categories.agent_session_days;
+                let days = config.categories.editor_history_days;
                 Some(ScannedEntry {
                     path: std::path::PathBuf::from(format!(
                         "editor-history:{}",
@@ -436,7 +469,7 @@ pub fn clean_editor_history(entry_path: &str, config: &Config) -> std::io::Resul
     let history = entry_path
         .strip_prefix("editor-history:")
         .unwrap_or(entry_path);
-    let cutoff = std::time::Duration::from_secs(config.categories.agent_session_days * 86_400);
+    let cutoff = std::time::Duration::from_secs(config.categories.editor_history_days * 86_400);
 
     let (aged, _) = aged_history_entries(std::path::Path::new(history), cutoff);
     if aged.is_empty() {

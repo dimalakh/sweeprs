@@ -111,9 +111,13 @@ git_gc_timeout_secs = 300
 
 # An AI agent session -- transcript, chat thread, rewind checkpoint -- is only
 # offered once it has gone untouched for this many days. Below it, --resume,
-# --continue and rewind can still reach the session. Also gates the editors'
-# own local file history. Default: 30 days.
+# --continue and rewind can still reach the session. Default: 30 days.
 agent_session_days = 30
+
+# Revisions in an editor's local file history (VS Code's Timeline, and the same
+# in its forks) older than this many days are offered; newer ones are kept.
+# Default: 30 days.
+editor_history_days = 30
 
 # Enable/disable individual categories. All enabled by default except duplicates.
 [categories.enabled]

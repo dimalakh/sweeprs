@@ -88,6 +88,10 @@ pub struct CategoriesConfig {
     /// Below it, `--resume` and rewind still reach the session.
     #[serde(alias = "agentSessionDays")]
     pub agent_session_days: u64,
+    /// Editor local file history (the Timeline view) older than this many days
+    /// is offered; newer revisions are kept.
+    #[serde(alias = "editorHistoryDays")]
+    pub editor_history_days: u64,
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -224,6 +228,7 @@ impl Default for CategoriesConfig {
             git_gc_min_reclaim: 52_428_800, // 50 MB
             git_gc_timeout_secs: 300,
             agent_session_days: 30,
+            editor_history_days: 30,
         }
     }
 }
