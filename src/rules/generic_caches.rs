@@ -159,7 +159,10 @@ impl CleanupRule for GenericCacheDirsRule {
                     size,
                     category: Category::AppCache,
                     safety: SafetyLevel::Safe,
-                    description: crate::util::tilde_path(path),
+                    description: format!(
+                        "{} cache",
+                        path.file_name().unwrap_or_default().to_string_lossy()
+                    ),
                     item_count: None,
                 })
             })
