@@ -42,7 +42,11 @@ const CACHE_MARKERS: &[(&str, &str, &str)] = &[
 /// rather than a local rebuild.
 const DEPS_MARKERS: &[(&str, &str, &str)] = &[
     ("Pods", "Podfile", "CocoaPods Pods/"),
-    (".terraform", ".terraform.lock.hcl", "Terraform providers"),
+    (
+        ".terraform",
+        ".terraform.lock.hcl",
+        "Terraform providers and selected workspace (init resets it to default)",
+    ),
 ];
 
 const MIN_SIZE: u64 = 1_048_576;

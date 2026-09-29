@@ -139,17 +139,17 @@ impl CleanupRule for GenericCacheDirsRule {
                 if !path.is_dir() {
                     return None;
                 }
-                let dirname = path.file_name()?.to_string_lossy().into_owned();
-                if KNOWN_CACHE_DIRS.contains(&dirname.as_str()) {
+                let dirname = path.file_name()?.to_string_lossy();
+                if KNOWN_CACHE_DIRS.contains(&dirname.as_ref()) {
                     return None;
                 }
-                Some((path, dirname))
+                Some(path)
             })
             .collect();
 
         candidates
             .par_iter()
-            .filter_map(|(path, dirname)| {
+            .filter_map(|path| {
                 let size = walker::dir_size(path);
                 if size < MIN_CACHE_SIZE {
                     return None;
@@ -159,7 +159,7 @@ impl CleanupRule for GenericCacheDirsRule {
                     size,
                     category: Category::AppCache,
                     safety: SafetyLevel::Safe,
-                    description: format!("~/.cache/{dirname}"),
+                    description: crate::util::tilde_path(path),
                     item_count: None,
                 })
             })

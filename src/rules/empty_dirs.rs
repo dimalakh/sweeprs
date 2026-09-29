@@ -15,10 +15,17 @@ const SKIP: &[&str] = &[
     "node_modules",
     "target",
     ".git",
+    ".hg",
+    ".jj",
+    ".svn",
     ".build",
     "vendor",
     ".venv",
 ];
+
+/// Finder writes one into every folder it opens, so on macOS a folder holding
+/// only this is as empty as it gets.
+const FINDER_METADATA: &str = ".DS_Store";
 
 pub struct EmptyDirsRule;
 
@@ -86,7 +93,14 @@ fn collect_empty(dir: &Path, depth: usize) -> (bool, Vec<PathBuf>) {
     let mut all_children_removable = true;
 
     for entry in entries.flatten() {
-        if !entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+        let Ok(file_type) = entry.file_type() else {
+            all_children_removable = false;
+            continue;
+        };
+        if file_type.is_file() && entry.file_name() == FINDER_METADATA {
+            continue;
+        }
+        if !file_type.is_dir() {
             all_children_removable = false;
             continue;
         }
@@ -122,6 +136,7 @@ pub fn clean_empty_dirs(entry_path: &str) -> io::Result<Option<u64>> {
     let mut removed = 0usize;
     let mut first_error = None;
     for dir in &dirs {
+        let _ = std::fs::remove_file(dir.join(FINDER_METADATA));
         // `remove_dir` refuses a non-empty directory, which is the guard we want
         // if something wrote into it between the scan and now.
         match std::fs::remove_dir(dir) {
@@ -172,5 +187,20 @@ mod tests {
         assert!(!root.join("a/b/c").exists());
         assert!(!root.join("a").exists());
         assert!(root.join("keep/file.txt").exists());
+    }
+
+    #[test]
+    fn a_folder_holding_only_finder_metadata_counts_as_empty() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("opened/inner")).expect("nested");
+        std::fs::write(root.join("opened/.DS_Store"), b"x").expect("ds_store");
+        std::fs::write(root.join("opened/inner/.DS_Store"), b"x").expect("ds_store");
+        std::fs::create_dir(root.join(".jj")).expect("jj");
+
+        clean_empty_dirs(&format!("empty-dirs:{}", root.display())).expect("clean");
+
+        assert!(!root.join("opened").exists());
+        assert!(root.join(".jj").exists());
     }
 }
