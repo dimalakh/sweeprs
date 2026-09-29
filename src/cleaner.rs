@@ -10,6 +10,7 @@ use rayon::prelude::*;
 use yansi::Paint;
 
 use crate::config::Config;
+use crate::output;
 use crate::rules::simulator;
 use crate::scanner::entry::{Category, SafetyLevel, ScannedEntry};
 use crate::util;
@@ -64,6 +65,7 @@ pub enum CleanAction {
 
 pub struct CleanOptions {
     pub dry_run: bool,
+    pub detail: output::Detail,
     pub skip_confirm: bool,
     pub include_unsafe: bool,
     pub action: CleanAction,
@@ -89,10 +91,12 @@ pub fn clean(entries: &[ScannedEntry], options: &CleanOptions) -> Result<()> {
         if !options.include_unsafe && !entries.is_empty() {
             let skipped: u64 = entries.iter().map(|e| e.size).sum();
             println!(
-                "{}",
+                "{} {}",
+                "No safe items to clean.".dim(),
                 format!(
-                    "No safe items to clean. {} in Caution/Danger items skipped (use --all to include).",
-                    util::human_size(skipped)
+                    "{} in caution/danger items held back; add {} to include them.",
+                    util::human_size(skipped),
+                    "--all".bold()
                 )
                 .dim()
             );
@@ -102,21 +106,15 @@ pub fn clean(entries: &[ScannedEntry], options: &CleanOptions) -> Result<()> {
         return Ok(());
     }
 
-    let category_groups = group_by_category(&filtered);
+    let category_groups = output::group_by_category(filtered.iter().copied());
     let total_size: u64 = filtered.iter().map(|e| e.size).sum();
-    print_clean_summary(
-        &category_groups,
-        &filtered,
-        entries,
-        total_size,
-        options.dry_run,
-        options.include_unsafe,
-    );
+    print_clean_summary(&category_groups, &filtered, entries, options);
 
     if options.dry_run {
         println!(
-            "\n{}",
-            "Dry run - no files were deleted. Use --force to delete.".yellow()
+            "\n{} {}",
+            "Dry run, nothing was deleted.".yellow(),
+            format!("Add {} to delete.", "--force".bold()).dim()
         );
         return Ok(());
     }
@@ -150,148 +148,49 @@ pub fn clean(entries: &[ScannedEntry], options: &CleanOptions) -> Result<()> {
     Ok(())
 }
 
-fn print_safety_breakdown(
-    filtered: &[&ScannedEntry],
-    all_entries: &[ScannedEntry],
-    include_unsafe: bool,
-) {
-    let safe_size: u64 = filtered
-        .iter()
-        .filter(|e| e.safety == SafetyLevel::Safe)
-        .map(|e| e.size)
-        .sum();
-    let safe_count = filtered
-        .iter()
-        .filter(|e| e.safety == SafetyLevel::Safe)
-        .count();
-    let caution_size: u64 = filtered
-        .iter()
-        .filter(|e| e.safety == SafetyLevel::Caution)
-        .map(|e| e.size)
-        .sum();
-    let caution_count = filtered
-        .iter()
-        .filter(|e| e.safety == SafetyLevel::Caution)
-        .count();
-    let danger_size: u64 = filtered
-        .iter()
-        .filter(|e| e.safety == SafetyLevel::Danger)
-        .map(|e| e.size)
-        .sum();
-    let danger_count = filtered
-        .iter()
-        .filter(|e| e.safety == SafetyLevel::Danger)
-        .count();
-
-    if safe_count > 0 {
-        println!(
-            "  {} {} ({} items)",
-            "[Safe]".green(),
-            util::human_size(safe_size),
-            safe_count
-        );
-    }
-    if caution_count > 0 {
-        println!(
-            "  {} {} ({} items)",
-            "[Caution]".yellow(),
-            util::human_size(caution_size),
-            caution_count
-        );
-    }
-    if danger_count > 0 {
-        println!(
-            "  {} {} ({} items)",
-            "[Danger]".red(),
-            util::human_size(danger_size),
-            danger_count
-        );
-    }
-
-    if !include_unsafe {
-        let unsafe_count = all_entries
-            .iter()
-            .filter(|e| e.safety != SafetyLevel::Safe && e.safety != SafetyLevel::Error)
-            .count();
-        if unsafe_count > 0 {
-            let unsafe_size: u64 = all_entries
-                .iter()
-                .filter(|e| e.safety != SafetyLevel::Safe && e.safety != SafetyLevel::Error)
-                .map(|e| e.size)
-                .sum();
-            println!(
-                "  {} {unsafe_count} Caution/Danger items ({}) hidden. Use {} to include.",
-                "Note:".dim(),
-                util::human_size(unsafe_size),
-                "--all".bold()
-            );
-        }
-    }
-}
-
 fn print_clean_summary(
     category_groups: &[(Category, Vec<&ScannedEntry>)],
     filtered: &[&ScannedEntry],
     all_entries: &[ScannedEntry],
-    total_size: u64,
-    dry_run: bool,
-    include_unsafe: bool,
+    options: &CleanOptions,
 ) {
-    println!(
-        "\n{}",
-        if dry_run {
-            "Items to clean (dry run):".bold()
-        } else {
-            "Items to clean:".bold()
-        }
+    let heading = if options.dry_run {
+        "Would clean"
+    } else {
+        "To clean"
+    };
+    println!("\n{}", heading.bold());
+    output::print_listing(
+        category_groups,
+        output::Listing {
+            numbered: true,
+            detail: options.detail,
+        },
     );
 
-    // Detailed per-entry listing grouped by category
-    for (i, (cat, cat_entries)) in category_groups.iter().enumerate() {
-        let cat_size: u64 = cat_entries.iter().map(|e| e.size).sum();
-        println!(
-            "\n{} {} ({} items, {})",
-            format!("[{:>2}]", i + 1).dim(),
-            cat.to_string().bold(),
-            cat_entries.len(),
-            util::human_size(cat_size),
-        );
-        for entry in cat_entries {
-            let safety_indicator = match entry.safety {
-                SafetyLevel::Safe => "[Safe]".green(),
-                SafetyLevel::Caution => "[Caution]".yellow(),
-                SafetyLevel::Danger => "[Danger]".red(),
-                SafetyLevel::Error => "[Error]".magenta(),
-            };
+    println!();
+    output::rule();
+    output::print_totals(filtered, category_groups.len(), "");
+
+    if !options.include_unsafe {
+        let held_back: Vec<&ScannedEntry> = all_entries
+            .iter()
+            .filter(|e| e.safety != SafetyLevel::Safe && e.safety != SafetyLevel::Error)
+            .collect();
+        if !held_back.is_empty() {
+            let size: u64 = held_back.iter().map(|e| e.size).sum();
             println!(
-                "  {} {:>10}  {}",
-                safety_indicator,
-                util::human_size(entry.size),
-                virtual_entry::display(&entry.path)
+                "  {}",
+                format!(
+                    "Not included: {} caution/danger items, {}. Add {} to include them.",
+                    held_back.len(),
+                    util::human_size(size),
+                    "--all".bold()
+                )
+                .dim()
             );
         }
     }
-
-    println!(
-        "\nTotal: {} across {} items in {} categories",
-        util::human_size(total_size).bold(),
-        filtered.len(),
-        category_groups.len()
-    );
-    print_safety_breakdown(filtered, all_entries, include_unsafe);
-}
-
-/// Group entries by category, preserving order by total size descending.
-fn group_by_category<'a>(entries: &[&'a ScannedEntry]) -> Vec<(Category, Vec<&'a ScannedEntry>)> {
-    use indexmap::IndexMap;
-    let mut groups: IndexMap<Category, Vec<&'a ScannedEntry>> = IndexMap::new();
-    for entry in entries {
-        groups.entry(entry.category).or_default().push(entry);
-    }
-    let mut result: Vec<_> = groups.into_iter().collect();
-    result
-        .sort_by_key(|(_, entries)| std::cmp::Reverse(entries.iter().map(|e| e.size).sum::<u64>()));
-    result
 }
 
 /// Interactive confirmation that lets the user choose what to clean.
@@ -314,18 +213,29 @@ fn interactive_confirm(
     if has_danger {
         println!(
             "\n{}",
-            "WARNING: Some items are marked as Danger. Deletion may be irreversible."
+            "Some categories are Danger: what they hold has no other copy."
                 .red()
                 .bold()
         );
     }
 
+    let choices = [
+        ("y", "everything"),
+        ("s", "safe only"),
+        ("c", "safe + caution"),
+        ("1,3 2-4", "by number"),
+        ("n", "cancel"),
+    ];
     println!(
-        "\n{}",
-        "Clean: [y]es all, [n]o cancel, [s]afe only, [c]aution+safe, or category numbers (1,3,5 or 1-4)"
-            .dim()
+        "\n{} {}",
+        "Clean which?".bold(),
+        choices
+            .iter()
+            .map(|(key, what)| format!("{} {}", key.bold(), what.dim()))
+            .collect::<Vec<_>>()
+            .join("   ")
     );
-    print!("> ");
+    print!("{} ", "›".cyan().bold());
     io::stdout().flush()?;
 
     let mut input = String::new();

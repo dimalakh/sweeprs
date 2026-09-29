@@ -144,6 +144,7 @@ fn run_auto_clean(config: &Config) {
 
     let options = cleaner::CleanOptions {
         dry_run: false,
+        detail: crate::output::Detail::Compact,
         skip_confirm: true,
         include_unsafe: false,
         action: cleaner::CleanAction::Delete,

@@ -20,7 +20,7 @@ indexmap = { version = "2", features = ["serde"] }
 rustc-hash = "2"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 memchr = "2"
-yansi = "1"
+yansi = { version = "1", features = ["detect-tty", "detect-env"] }
 humansize = "2"
 indicatif = { version = "0.18", features = ["rayon"] }
 dirs = "7"
@@ -30,6 +30,7 @@ ctrlc = { version = "3", features = ["termination"] }
 globset = "0.4"
 clap_complete = "4"
 tempfile = "3"
+unicode-width = "0.2"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["signal"] }

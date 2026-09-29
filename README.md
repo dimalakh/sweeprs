@@ -27,6 +27,7 @@ safely with dry-run by default.
 - **Glob filtering** -- `--filter` and `--exclude` patterns to narrow results by path
 - **Size filtering** -- `--min-size` to focus on large items
 - **Global excludes** -- configure paths to never touch in your config file
+- **Readable output** -- each category lists its largest items with the rest summed into one line, columns fit the terminal width, and colour only goes to a terminal (`NO_COLOR` is honoured)
 - **Parallel scanning** -- rayon-powered concurrent rule execution; run `sweeprs scan` with `SWEEPRS_PROFILE=1` to print per-rule timings, slowest first
 - **Platform optimized** -- uses native OS primitives for fast scanning on each platform
 - **Streaming results** -- TUI updates as each rule completes, no waiting for full scan
@@ -93,8 +94,11 @@ Launches the full-screen terminal interface. Scans automatically on startup.
 ### Scan
 
 ```bash
-# Scan everything
+# Scan everything: each category with its largest items, the rest summed
 sweeprs scan
+
+# List every item instead (also works with clean)
+sweeprs scan -v
 
 # Scan a specific category
 sweeprs scan --category build

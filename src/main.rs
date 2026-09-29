@@ -13,6 +13,7 @@ mod virtual_entry;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
+use yansi::Paint;
 
 use scanner::entry::Category;
 
@@ -48,6 +49,9 @@ enum Command {
         /// Load scan results from a JSON file instead of scanning
         #[arg(long)]
         load: Option<String>,
+        /// List every item instead of the largest per category
+        #[arg(short, long)]
+        verbose: bool,
     },
     /// Clean up disk space
     ///
@@ -84,6 +88,9 @@ enum Command {
         /// Directory to store archives (default: next to original)
         #[arg(long)]
         archive_dir: Option<String>,
+        /// List every item instead of the largest per category
+        #[arg(short, long)]
+        verbose: bool,
     },
     /// Background disk usage monitor
     Monitor {
@@ -282,14 +289,20 @@ fn print_scan_summary(result: &scanner::entry::ScanResult) {
         .map(|d| format!(" in {d:.1}s"))
         .unwrap_or_default();
     eprintln!(
-        "Scan complete: {} items, {} found{duration_str}",
-        result.entries.len(),
-        util::human_size(result.total_size),
+        "{}",
+        format!(
+            "Scanned: {} items, {}{duration_str}",
+            result.entries.len(),
+            util::human_size(result.total_size),
+        )
+        .dim()
     );
 }
 
 #[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
+    // Escape codes only reach a terminal, and NO_COLOR / CLICOLOR are honoured.
+    yansi::whenever(yansi::Condition::TTY_AND_COLOR);
     let cli = Cli::parse();
 
     match cli.command {
@@ -302,6 +315,7 @@ fn main() -> Result<()> {
             min_size,
             save,
             load,
+            verbose,
         }) => {
             let config = config::Config::load()?;
             let mut result = if let Some(ref load_path) = load {
@@ -330,8 +344,7 @@ fn main() -> Result<()> {
             if json {
                 output::print_json(&result)?;
             } else {
-                print_scan_summary(&result);
-                output::print_table(&result);
+                output::print_table(&result, output::Detail::from_verbose(verbose));
             }
         }
         Some(Command::Clean {
@@ -344,6 +357,7 @@ fn main() -> Result<()> {
             min_size,
             archive,
             archive_dir,
+            verbose,
         }) => {
             let config = config::Config::load()?;
 
@@ -404,6 +418,7 @@ fn main() -> Result<()> {
 
             let options = cleaner::CleanOptions {
                 dry_run: !force,
+                detail: output::Detail::from_verbose(verbose),
                 skip_confirm: yes,
                 include_unsafe,
                 action,
