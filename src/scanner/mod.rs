@@ -39,7 +39,7 @@ fn spawn_progress_ticker(
 
             match phase {
                 0 => {
-                    spinner.set_message("Warming caches (docker, brew, rustup, project index)...");
+                    spinner.set_message("Preparing: docker, brew, rustup, project index");
                 }
                 _ => {
                     if total > 0 {
@@ -49,7 +49,7 @@ fn spawn_progress_ticker(
                             .map(|n| n.clone())
                             .unwrap_or_default();
                         spinner.set_message(format!(
-                            "Scanning {done}/{total} rules | {items} items | {} | {current}",
+                            "Scanning {done}/{total} rules · {items} found · {} · {current}",
                             util::human_size(bytes),
                         ));
                     }
@@ -67,7 +67,7 @@ fn spawn_progress_ticker(
 fn new_scan_spinner() -> ProgressBar {
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(
-        ProgressStyle::with_template("{spinner:.cyan} {msg} [{elapsed_precise}]")
+        ProgressStyle::with_template("{spinner:.cyan} {wide_msg} {elapsed:.dim}")
             .expect("valid template")
             .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
     );

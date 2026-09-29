@@ -348,36 +348,40 @@ fn delete_entries(
         println!();
         for (entry, reason) in &skipped_entries {
             println!(
-                "  {} {} ({})",
-                "Skipped".yellow(),
+                "  {} {}  {}",
+                "–".yellow(),
                 virtual_entry::display(&entry.path),
-                reason
+                format!("skipped, {reason}").dim()
             );
         }
     }
 
     let actionable_count = fast_entries.len() + slow_entries.len();
     if actionable_count == 0 {
-        println!("\nNothing to clean (all items require elevated permissions).");
+        println!(
+            "\n{}",
+            "Nothing to clean: every selected item was skipped.".dim()
+        );
         return;
     }
 
+    let started = Instant::now();
     let cleaned = AtomicU64::new(0);
     let errors: Mutex<Vec<(PathBuf, io::Error)>> = Mutex::new(Vec::new());
 
     let action = if archive { "Archiving" } else { "Cleaning" };
 
-    run_slow_operations(&slow_entries, &cleaned, &errors, config);
+    let slow_failures = run_slow_operations(&slow_entries, &cleaned, config);
 
     // Phase 2: fast parallel filesystem deletions with progress bar
     if !fast_entries.is_empty() {
         let bar = ProgressBar::new(fast_entries.len() as u64);
         bar.set_style(
             ProgressStyle::with_template(&format!(
-                "{{spinner:.green}} {action} [{{bar:30.green/dim}}] {{pos}}/{{len}} items  {{msg}}"
+                "  {{spinner:.cyan}} {action} {{bar:30.cyan/dim}} {{pos}}/{{len}}  {{wide_msg:.dim}}"
             ))
             .expect("valid template")
-            .progress_chars("=>-"),
+            .progress_chars("━╸─"),
         );
 
         fast_entries.par_iter().for_each(|entry| {
@@ -418,26 +422,51 @@ fn delete_entries(
 
     let cleaned = cleaned.load(Ordering::Relaxed);
     let errors = errors.into_inner().unwrap();
+    let failed = errors.len() + slow_failures;
+    let succeeded = actionable_count - failed;
 
-    let verb = if archive { "Archived" } else { "Cleaned" };
-    println!("\n{verb}: {}", util::human_size(cleaned).green().bold());
+    let verb = if archive { "Archived" } else { "Freed" };
+    println!();
+    output::rule();
+    println!(
+        "  {} {} from {} {}",
+        verb.bold(),
+        util::human_size(cleaned).green().bold(),
+        output::plural(succeeded, "item", "items"),
+        format!("· {:.1}s", started.elapsed().as_secs_f64()).dim(),
+    );
 
     if !skipped_entries.is_empty() {
         let skipped_size: u64 = skipped_entries.iter().map(|(e, _)| e.size).sum();
         println!(
-            "Skipped: {} ({} items)",
-            util::human_size(skipped_size).yellow(),
-            skipped_entries.len()
+            "  {} {}, {} {}",
+            "Skipped".yellow(),
+            output::plural(skipped_entries.len(), "item", "items"),
+            util::human_size(skipped_size),
+            "(listed above)".dim()
         );
     }
 
-    if !errors.is_empty() {
-        println!("\nErrors:");
+    if failed > 0 {
+        // Slow operations report their failure as they run; only the
+        // filesystem deletions, which ran behind a progress bar, are listed here.
+        let where_listed = if errors.is_empty() {
+            " (listed above)"
+        } else {
+            ":"
+        };
+        println!(
+            "  {} {}{}",
+            "Failed".red(),
+            output::plural(failed, "item", "items"),
+            where_listed.dim()
+        );
         for (path, err) in &errors {
             println!(
-                "  {} {}: {err}",
-                "Failed".red(),
-                virtual_entry::display(path)
+                "    {} {}  {}",
+                "✗".red(),
+                virtual_entry::display(path),
+                err.to_string().dim()
             );
         }
     }
@@ -465,25 +494,21 @@ pub fn delete_path(path: &Path) -> io::Result<()> {
 /// These are external tools with no progress output of their own once their
 /// stderr is piped, so the spinner carries the elapsed time: a repack that takes
 /// four minutes has to look like work in progress, not like a hang.
-fn run_slow_operations(
-    entries: &[&ScannedEntry],
-    cleaned: &AtomicU64,
-    errors: &Mutex<Vec<(PathBuf, io::Error)>>,
-    config: &Config,
-) {
+fn run_slow_operations(entries: &[&ScannedEntry], cleaned: &AtomicU64, config: &Config) -> usize {
     if entries.is_empty() {
-        return;
+        return 0;
     }
     println!();
+    let mut failures = 0;
     for entry in entries {
         let path_str = entry.path.display().to_string();
         let display = virtual_entry::label(&path_str);
 
         let spinner = ProgressBar::new_spinner();
         spinner.set_style(
-            ProgressStyle::with_template("{spinner:.cyan} {msg} [{elapsed_precise}]")
+            ProgressStyle::with_template("  {spinner:.cyan} {wide_msg} {elapsed:.dim}")
                 .expect("valid template")
-                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
+                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
         );
         spinner.set_message(display.clone());
         spinner.enable_steady_tick(Duration::from_millis(80));
@@ -499,19 +524,23 @@ fn run_slow_operations(
                 let freed = freed.unwrap_or(entry.size);
                 cleaned.fetch_add(freed, Ordering::Relaxed);
                 println!(
-                    "  {} {} (freed {}, {:.1}s)",
-                    "Done".green(),
-                    display,
-                    util::human_size(freed),
-                    elapsed.as_secs_f64(),
+                    "  {} {display}  {}",
+                    "✓".green(),
+                    format!(
+                        "freed {} · {:.1}s",
+                        util::human_size(freed),
+                        elapsed.as_secs_f64()
+                    )
+                    .dim(),
                 );
             }
             Err(e) => {
-                println!("  {} {display}: {e}", "Failed".red());
-                errors.lock().unwrap().push((entry.path.clone(), e));
+                failures += 1;
+                println!("  {} {display}  {}", "✗".red(), e.to_string().dim());
             }
         }
     }
+    failures
 }
 
 /// Measure how many bytes were freed by a clean operation on an entry.
@@ -626,6 +655,33 @@ mod tests {
             description: String::new(),
             item_count: None,
         }
+    }
+
+    #[test]
+    fn a_clean_removes_what_it_can_and_survives_what_it_cannot() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let cache = tmp.path().join("cache");
+        std::fs::create_dir(&cache).expect("cache");
+        std::fs::write(cache.join("blob"), vec![0u8; 8192]).expect("blob");
+
+        let mut removable = listed(Category::PackageCache, SafetyLevel::Safe);
+        removable.path = cache.clone();
+        removable.size = 8192;
+        // Not a repository, so the gc fails and is reported, not fatal.
+        let mut failing = listed(Category::BuildArtifact, SafetyLevel::Caution);
+        failing.path = PathBuf::from(format!("git-gc:{}", tmp.path().join("nope").display()));
+        let mut privileged = listed(Category::LogFile, SafetyLevel::Caution);
+        privileged.path = PathBuf::from("/Library/Logs/acme");
+
+        delete_entries(
+            &[&removable, &failing, &privileged],
+            8192,
+            false,
+            None,
+            &Config::default(),
+        );
+
+        assert!(!cache.exists());
     }
 
     #[test]

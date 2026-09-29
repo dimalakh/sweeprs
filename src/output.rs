@@ -416,7 +416,7 @@ pub fn print_listing(groups: &[(Category, Vec<&ScannedEntry>)], listing: Listing
     }
 }
 
-fn plural(count: usize, one: &str, many: &str) -> String {
+pub fn plural(count: usize, one: &str, many: &str) -> String {
     format!("{count} {}", if count == 1 { one } else { many })
 }
 

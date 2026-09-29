@@ -473,8 +473,10 @@ fn main() -> Result<()> {
             }
         }
         Some(Command::Categories) => {
-            println!("{:<20} {:<10} CLI ARG", "CATEGORY", "SAFETY");
-            println!("{}", "-".repeat(50));
+            println!(
+                "{}",
+                format!("{:<24}{:<9}{}", "CATEGORY", "SAFETY", "ARGUMENT").dim()
+            );
             for cat in Category::ALL {
                 let arg = match cat {
                     Category::PackageCache => "cache",
@@ -500,7 +502,12 @@ fn main() -> Result<()> {
                     Category::AgentSession => "agent-sessions",
                     Category::StaleProject => "stale-project",
                 };
-                println!("{:<20} {:<10} {}", cat, cat.default_safety(), arg);
+                println!(
+                    "{:<24}{}  {}",
+                    cat.to_string(),
+                    output::badge(cat.default_safety()),
+                    arg.cyan()
+                );
             }
         }
         Some(Command::Upgrade) => commands::upgrade::execute()?,
