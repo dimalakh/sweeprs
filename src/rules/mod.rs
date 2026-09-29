@@ -318,18 +318,16 @@ fn run_rules(
     let entries: Vec<ScannedEntry> = rules
         .par_iter()
         .flat_map(|rule| {
-            if let Some(p) = progress {
-                if let Ok(mut name) = p.current_rule.lock() {
-                    *name = rule.name().to_string();
-                }
+            if let Some(p) = progress
+                && let Ok(mut name) = p.current_rule.lock()
+            {
+                *name = rule.name().to_string();
             }
 
             let started = std::time::Instant::now();
             let found = rule.scan(config);
-            if profile {
-                if let Ok(mut timings) = timings.lock() {
-                    timings.push((started.elapsed(), rule.name(), found.len()));
-                }
+            if profile && let Ok(mut timings) = timings.lock() {
+                timings.push((started.elapsed(), rule.name(), found.len()));
             }
 
             if let Some(p) = progress {
@@ -342,13 +340,11 @@ fn run_rules(
         })
         .collect();
 
-    if profile {
-        if let Ok(mut timings) = timings.lock() {
-            timings.sort_by_key(|(elapsed, _, _)| std::cmp::Reverse(*elapsed));
-            eprintln!("rule timings (slowest first):");
-            for (elapsed, name, count) in timings.iter() {
-                eprintln!("  {:>8.2}s  {name} ({count} items)", elapsed.as_secs_f64());
-            }
+    if profile && let Ok(mut timings) = timings.lock() {
+        timings.sort_by_key(|(elapsed, _, _)| std::cmp::Reverse(*elapsed));
+        eprintln!("rule timings (slowest first):");
+        for (elapsed, name, count) in timings.iter() {
+            eprintln!("  {:>8.2}s  {name} ({count} items)", elapsed.as_secs_f64());
         }
     }
 

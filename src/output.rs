@@ -142,23 +142,23 @@ fn print_disk_info(disk: &DiskInfo) {
             util::human_size(disk.snapshot_bytes).yellow()
         );
     }
-    if let Some(icloud) = disk.icloud_local_bytes {
-        if icloud > 0 {
-            println!("iCloud local: {}", util::human_size(icloud).cyan());
-        }
+    if let Some(icloud) = disk.icloud_local_bytes
+        && icloud > 0
+    {
+        println!("iCloud local: {}", util::human_size(icloud).cyan());
     }
-    if let Some(tm_reclaim) = disk.tm_reclaimable_bytes {
-        if tm_reclaim > 0 {
-            println!(
-                "TM reclaimable: {} (delete old snapshots)",
-                util::human_size(tm_reclaim).yellow()
-            );
-        }
+    if let Some(tm_reclaim) = disk.tm_reclaimable_bytes
+        && tm_reclaim > 0
+    {
+        println!(
+            "TM reclaimable: {} (delete old snapshots)",
+            util::human_size(tm_reclaim).yellow()
+        );
     }
-    if let Some(system_app) = disk.system_app_bytes {
-        if system_app > 0 {
-            println!("System + Apps: {}", util::human_size(system_app).dim());
-        }
+    if let Some(system_app) = disk.system_app_bytes
+        && system_app > 0
+    {
+        println!("System + Apps: {}", util::human_size(system_app).dim());
     }
     if !disk.other_volumes.is_empty() {
         println!();

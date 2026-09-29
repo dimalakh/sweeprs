@@ -156,14 +156,11 @@ pub fn parse_snapshot_bytes_from_output(output: &str) -> u64 {
         if line.contains("Snapshot Name:") && line.contains("com.apple.TimeMachine") {
             for following in &lines[i + 1..] {
                 if following.contains("Snapshot Disk Size:") {
-                    if let Some(start) = following.find('(') {
-                        if let Some(end) = following[start..].find(" Bytes)") {
-                            if let Ok(bytes) =
-                                following[start + 1..start + end].trim().parse::<u64>()
-                            {
-                                total += bytes;
-                            }
-                        }
+                    if let Some(start) = following.find('(')
+                        && let Some(end) = following[start..].find(" Bytes)")
+                        && let Ok(bytes) = following[start + 1..start + end].trim().parse::<u64>()
+                    {
+                        total += bytes;
                     }
                     break;
                 }

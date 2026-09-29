@@ -37,7 +37,7 @@ const MIN_SCRATCH_SIZE: u64 = 1_048_576;
 
 /// State whose session is gone is unreachable at any age, but a session that
 /// has only just started may not have written its transcript yet.
-const ORPHAN_MIN_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+const ORPHAN_MIN_AGE: Duration = Duration::from_hours(24);
 
 pub struct AgentTranscriptRule;
 pub struct AgentCheckpointRule;
@@ -567,17 +567,16 @@ impl CleanupRule for AgentScratchRule {
 
                 // Nothing individually notable: offer the directory once, still
                 // only if the whole of it is stale.
-                if entries.is_empty() {
-                    if let Some((days, size)) = aged(&root, cutoff) {
-                        if size >= MIN_SCRATCH_SIZE {
-                            entries.push(entry(
-                                root,
-                                size,
-                                SafetyLevel::Caution,
-                                format!("{label}, {days} days idle"),
-                            ));
-                        }
-                    }
+                if entries.is_empty()
+                    && let Some((days, size)) = aged(&root, cutoff)
+                    && size >= MIN_SCRATCH_SIZE
+                {
+                    entries.push(entry(
+                        root,
+                        size,
+                        SafetyLevel::Caution,
+                        format!("{label}, {days} days idle"),
+                    ));
                 }
 
                 entries
@@ -595,10 +594,10 @@ fn live_claude_sessions() -> FxHashSet<String> {
     let mut live = FxHashSet::default();
     for slug in children(&claude_home().join("projects")) {
         for file in children(&slug) {
-            if file.extension().is_some_and(|e| e == "jsonl") {
-                if let Some(stem) = file.file_stem() {
-                    live.insert(stem.to_string_lossy().to_string());
-                }
+            if file.extension().is_some_and(|e| e == "jsonl")
+                && let Some(stem) = file.file_stem()
+            {
+                live.insert(stem.to_string_lossy().to_string());
             }
         }
     }

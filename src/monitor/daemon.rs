@@ -14,7 +14,7 @@ use crate::util;
 use super::notify;
 
 /// How long to suppress repeated notifications after one is sent.
-const NOTIFICATION_COOLDOWN: Duration = Duration::from_secs(4 * 3600); // 4 hours
+const NOTIFICATION_COOLDOWN: Duration = Duration::from_hours(4);
 
 /// Sleep granularity -- wake up this often to check the shutdown flag.
 const TICK: Duration = Duration::from_secs(5);

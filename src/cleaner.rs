@@ -378,10 +378,11 @@ fn interactive_confirm(
                     }
                 }
             }
-        } else if let Ok(num) = part.parse::<usize>() {
-            if num >= 1 && num <= category_groups.len() {
-                selected.insert(category_groups[num - 1].0);
-            }
+        } else if let Ok(num) = part.parse::<usize>()
+            && num >= 1
+            && num <= category_groups.len()
+        {
+            selected.insert(category_groups[num - 1].0);
         }
     }
 

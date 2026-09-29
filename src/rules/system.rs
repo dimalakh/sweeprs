@@ -123,38 +123,37 @@ fn scan_macos_temp(entries: &mut Vec<ScannedEntry>, one_hour_ago: SystemTime) {
 
     // /private/var/folders - macOS user temp dirs
     let var_folders = PathBuf::from("/private/var/folders");
-    if var_folders.exists() {
-        if let Ok(top_dirs) = std::fs::read_dir(&var_folders) {
-            for top in top_dirs.flatten() {
-                if !top.path().is_dir() {
-                    continue;
-                }
-                if let Ok(sub_dirs) = std::fs::read_dir(top.path()) {
-                    for sub in sub_dirs.flatten() {
-                        let t_dir = sub.path().join("T");
-                        if let Ok(tmpdir) = std::env::var("TMPDIR") {
-                            let tmpdir_path = PathBuf::from(&tmpdir);
-                            let tmpdir_canonical = tmpdir_path
-                                .canonicalize()
-                                .unwrap_or_else(|_| tmpdir_path.clone());
-                            let t_canonical =
-                                t_dir.canonicalize().unwrap_or_else(|_| t_dir.clone());
-                            if tmpdir_canonical == t_canonical {
-                                continue;
-                            }
+    if var_folders.exists()
+        && let Ok(top_dirs) = std::fs::read_dir(&var_folders)
+    {
+        for top in top_dirs.flatten() {
+            if !top.path().is_dir() {
+                continue;
+            }
+            if let Ok(sub_dirs) = std::fs::read_dir(top.path()) {
+                for sub in sub_dirs.flatten() {
+                    let t_dir = sub.path().join("T");
+                    if let Ok(tmpdir) = std::env::var("TMPDIR") {
+                        let tmpdir_path = PathBuf::from(&tmpdir);
+                        let tmpdir_canonical = tmpdir_path
+                            .canonicalize()
+                            .unwrap_or_else(|_| tmpdir_path.clone());
+                        let t_canonical = t_dir.canonicalize().unwrap_or_else(|_| t_dir.clone());
+                        if tmpdir_canonical == t_canonical {
+                            continue;
                         }
-                        if t_dir.exists() && t_dir.is_dir() && std::fs::read_dir(&t_dir).is_ok() {
-                            let size = scan_old_files(&t_dir, one_hour_ago);
-                            if size > 0 {
-                                entries.push(ScannedEntry {
-                                    path: t_dir,
-                                    size,
-                                    category: Category::SystemJunk,
-                                    safety: SafetyLevel::Caution,
-                                    description: "Temp files in /var/folders".to_owned(),
-                                    item_count: None,
-                                });
-                            }
+                    }
+                    if t_dir.exists() && t_dir.is_dir() && std::fs::read_dir(&t_dir).is_ok() {
+                        let size = scan_old_files(&t_dir, one_hour_ago);
+                        if size > 0 {
+                            entries.push(ScannedEntry {
+                                path: t_dir,
+                                size,
+                                category: Category::SystemJunk,
+                                safety: SafetyLevel::Caution,
+                                description: "Temp files in /var/folders".to_owned(),
+                                item_count: None,
+                            });
                         }
                     }
                 }
@@ -359,24 +358,24 @@ impl CleanupRule for DmgInstallerRule {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_lowercase();
-                if extensions.iter().any(|ext| name.ends_with(ext)) {
-                    if let Ok(meta) = path.metadata() {
-                        let size = meta.len();
-                        if size > 0 {
-                            let file_name = path
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy()
-                                .to_string();
-                            entries.push(ScannedEntry {
-                                path,
-                                size,
-                                category: Category::SystemJunk,
-                                safety: SafetyLevel::Caution,
-                                description: format!("Installer: {file_name}"),
-                                item_count: None,
-                            });
-                        }
+                if extensions.iter().any(|ext| name.ends_with(ext))
+                    && let Ok(meta) = path.metadata()
+                {
+                    let size = meta.len();
+                    if size > 0 {
+                        let file_name = path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
+                        entries.push(ScannedEntry {
+                            path,
+                            size,
+                            category: Category::SystemJunk,
+                            safety: SafetyLevel::Caution,
+                            description: format!("Installer: {file_name}"),
+                            item_count: None,
+                        });
                     }
                 }
             }

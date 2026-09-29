@@ -528,7 +528,7 @@ mod tests {
         std::fs::write(history.join("entries.json"), b"{}").expect("index");
 
         // Just-written entries are inside any real cutoff.
-        let (aged, total) = aged_history_entries(history, std::time::Duration::from_secs(86_400));
+        let (aged, total) = aged_history_entries(history, std::time::Duration::from_hours(24));
         assert_eq!(aged, Vec::<std::path::PathBuf>::new());
         // Loose files at the top level are not per-file history directories.
         assert_eq!(total, 1);

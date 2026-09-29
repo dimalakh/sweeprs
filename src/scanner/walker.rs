@@ -24,10 +24,10 @@ fn cached(path: &Path) -> Option<(u64, usize)> {
 }
 
 fn remember(path: &Path, measured: (u64, usize)) {
-    if let Ok(mut cache) = SIZE_CACHE.write() {
-        if let Some(cache) = cache.as_mut() {
-            cache.insert(path.to_path_buf(), measured);
-        }
+    if let Ok(mut cache) = SIZE_CACHE.write()
+        && let Some(cache) = cache.as_mut()
+    {
+        cache.insert(path.to_path_buf(), measured);
     }
 }
 
@@ -113,14 +113,14 @@ fn dir_size_fallback(path: &Path) -> u64 {
     let mut seen_inodes = rustc_hash::FxHashSet::default();
 
     for entry in walker.flatten() {
-        if entry.file_type().is_some_and(|ft| ft.is_file()) {
-            if let Ok(meta) = entry.metadata() {
-                let nlink = meta.nlink();
-                if nlink > 1 && !seen_inodes.insert(meta.ino()) {
-                    continue;
-                }
-                total += meta.blocks() * 512;
+        if entry.file_type().is_some_and(|ft| ft.is_file())
+            && let Ok(meta) = entry.metadata()
+        {
+            let nlink = meta.nlink();
+            if nlink > 1 && !seen_inodes.insert(meta.ino()) {
+                continue;
             }
+            total += meta.blocks() * 512;
         }
     }
     total
@@ -162,14 +162,14 @@ fn dir_size_and_count_fallback(path: &Path) -> (u64, usize) {
         if depth == 1 {
             count += 1;
         }
-        if entry.file_type().is_some_and(|ft| ft.is_file()) {
-            if let Ok(meta) = entry.metadata() {
-                let nlink = meta.nlink();
-                if nlink > 1 && !seen_inodes.insert(meta.ino()) {
-                    continue;
-                }
-                total += meta.blocks() * 512;
+        if entry.file_type().is_some_and(|ft| ft.is_file())
+            && let Ok(meta) = entry.metadata()
+        {
+            let nlink = meta.nlink();
+            if nlink > 1 && !seen_inodes.insert(meta.ino()) {
+                continue;
             }
+            total += meta.blocks() * 512;
         }
     }
 

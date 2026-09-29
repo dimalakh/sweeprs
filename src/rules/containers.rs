@@ -328,10 +328,10 @@ fn shallow_dir_size(dir: &Path, exclude: &[&str]) -> u64 {
         if exclude.contains(&name_str.as_ref()) {
             continue;
         }
-        if let Ok(meta) = entry.metadata() {
-            if meta.is_file() {
-                total += meta.blocks() * 512;
-            }
+        if let Ok(meta) = entry.metadata()
+            && meta.is_file()
+        {
+            total += meta.blocks() * 512;
         }
     }
     total
@@ -347,10 +347,10 @@ fn disk_dir_size(dir: &Path) -> u64 {
     };
     let mut total = 0u64;
     for entry in read_dir.flatten() {
-        if let Ok(meta) = entry.metadata() {
-            if meta.is_file() {
-                total += meta.blocks() * 512;
-            }
+        if let Ok(meta) = entry.metadata()
+            && meta.is_file()
+        {
+            total += meta.blocks() * 512;
         }
     }
     total

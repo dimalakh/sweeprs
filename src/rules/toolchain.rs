@@ -109,10 +109,10 @@ fn collect_active_rust_toolchains(home: &std::path::Path) -> FxHashSet<String> {
     }
 
     // Also check the active-toolchain output (covers directory overrides)
-    if let Some(result) = cli_cache::get("rustup_active_toolchain") {
-        if let Some(name) = result.stdout.split_whitespace().next() {
-            active.insert(name.to_owned());
-        }
+    if let Some(result) = cli_cache::get("rustup_active_toolchain")
+        && let Some(name) = result.stdout.split_whitespace().next()
+    {
+        active.insert(name.to_owned());
     }
 
     // Scan known project roots for rust-toolchain.toml files that pin specific channels.
@@ -139,16 +139,16 @@ fn scan_project_toolchains(dir: &std::path::Path, depth: u8, active: &mut FxHash
     // Check for rust-toolchain.toml or rust-toolchain in this dir
     for filename in ["rust-toolchain.toml", "rust-toolchain"] {
         let path = dir.join(filename);
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Some(channel) = extract_toolchain_channel(&content) {
-                // Resolve channel to installed toolchain name.
-                // "nightly" -> "nightly-aarch64-apple-darwin" on this host.
-                active.insert(channel.clone());
-                // Also insert with host triple appended
-                let host = current_host_triple();
-                if !host.is_empty() {
-                    active.insert(format!("{channel}-{host}"));
-                }
+        if let Ok(content) = std::fs::read_to_string(&path)
+            && let Some(channel) = extract_toolchain_channel(&content)
+        {
+            // Resolve channel to installed toolchain name.
+            // "nightly" -> "nightly-aarch64-apple-darwin" on this host.
+            active.insert(channel.clone());
+            // Also insert with host triple appended
+            let host = current_host_triple();
+            if !host.is_empty() {
+                active.insert(format!("{channel}-{host}"));
             }
         }
     }
@@ -330,17 +330,17 @@ fn collect_active_mise_versions() -> rustc_hash::FxHashMap<String, FxHashSet<Str
         rustc_hash::FxHashMap::default();
 
     // Try `mise current` which outputs: "node  22.21.1  ~/.tool-versions"
-    if let Ok(output) = std::process::Command::new("mise").arg("current").output() {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 2 {
-                    active
-                        .entry(parts[0].to_owned())
-                        .or_default()
-                        .insert(parts[1].to_owned());
-                }
+    if let Ok(output) = std::process::Command::new("mise").arg("current").output()
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                active
+                    .entry(parts[0].to_owned())
+                    .or_default()
+                    .insert(parts[1].to_owned());
             }
         }
     }

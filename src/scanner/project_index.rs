@@ -261,10 +261,10 @@ impl ProjectIndex {
         let mut object_stores: Vec<PathBuf> = Vec::new();
         let mut seen = FxHashSet::default();
         for root in &all_git_roots {
-            if let Some(store) = resolve_git_dir(root) {
-                if seen.insert(store.clone()) {
-                    object_stores.push(store);
-                }
+            if let Some(store) = resolve_git_dir(root)
+                && seen.insert(store.clone())
+            {
+                object_stores.push(store);
             }
         }
 
@@ -295,13 +295,12 @@ impl ProjectIndex {
                 let dir_name: &str = marker_tuple.0;
                 let marker_file: &str = marker_tuple.1;
                 let label: &'static str = marker_tuple.2;
-                if entry.name == dir_name {
-                    if let Some(parent) = entry.path.parent() {
-                        if parent.join(marker_file).exists() {
-                            found.push((entry.path.clone(), label));
-                            break;
-                        }
-                    }
+                if entry.name == dir_name
+                    && let Some(parent) = entry.path.parent()
+                    && parent.join(marker_file).exists()
+                {
+                    found.push((entry.path.clone(), label));
+                    break;
                 }
             }
         }

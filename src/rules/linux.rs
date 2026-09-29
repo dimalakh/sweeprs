@@ -321,51 +321,51 @@ impl CleanupRule for SnapCacheRule {
         // Disabled snap revisions in /snap/*/
         // Each snap keeps old revisions that are disabled but still take space.
         let snap_dir = PathBuf::from("/snap");
-        if snap_dir.exists() {
-            if let Ok(snaps) = std::fs::read_dir(&snap_dir) {
-                for snap_entry in snaps.flatten() {
-                    let snap_path = snap_entry.path();
-                    if !snap_path.is_dir() {
-                        continue;
-                    }
-                    let snap_name = snap_entry.file_name().to_string_lossy().to_string();
-                    if snap_name == "bin" || snap_name.starts_with('.') {
-                        continue;
-                    }
+        if snap_dir.exists()
+            && let Ok(snaps) = std::fs::read_dir(&snap_dir)
+        {
+            for snap_entry in snaps.flatten() {
+                let snap_path = snap_entry.path();
+                if !snap_path.is_dir() {
+                    continue;
+                }
+                let snap_name = snap_entry.file_name().to_string_lossy().to_string();
+                if snap_name == "bin" || snap_name.starts_with('.') {
+                    continue;
+                }
 
-                    // Find the "current" symlink target revision number
-                    let current_link = snap_path.join("current");
-                    let current_rev = current_link
-                        .read_link()
-                        .ok()
-                        .and_then(|t| t.file_name().map(|f| f.to_string_lossy().to_string()));
+                // Find the "current" symlink target revision number
+                let current_link = snap_path.join("current");
+                let current_rev = current_link
+                    .read_link()
+                    .ok()
+                    .and_then(|t| t.file_name().map(|f| f.to_string_lossy().to_string()));
 
-                    if let Ok(revisions) = std::fs::read_dir(&snap_path) {
-                        for rev_entry in revisions.flatten() {
-                            let rev_name = rev_entry.file_name().to_string_lossy().to_string();
-                            // Skip non-numeric dirs (like "current" symlink)
-                            if !rev_name.chars().all(|c| c.is_ascii_digit()) {
-                                continue;
-                            }
-                            // Skip the current active revision
-                            if current_rev.as_deref() == Some(&rev_name) {
-                                continue;
-                            }
+                if let Ok(revisions) = std::fs::read_dir(&snap_path) {
+                    for rev_entry in revisions.flatten() {
+                        let rev_name = rev_entry.file_name().to_string_lossy().to_string();
+                        // Skip non-numeric dirs (like "current" symlink)
+                        if !rev_name.chars().all(|c| c.is_ascii_digit()) {
+                            continue;
+                        }
+                        // Skip the current active revision
+                        if current_rev.as_deref() == Some(&rev_name) {
+                            continue;
+                        }
 
-                            let rev_path = rev_entry.path();
-                            let size = walker::dir_size(&rev_path);
-                            if size > 0 {
-                                entries.push(ScannedEntry {
-                                    path: rev_path,
-                                    size,
-                                    category: Category::LinuxSpecific,
-                                    safety: SafetyLevel::Caution,
-                                    description: format!(
-                                        "Snap old revision: {snap_name} rev {rev_name}"
-                                    ),
-                                    item_count: None,
-                                });
-                            }
+                        let rev_path = rev_entry.path();
+                        let size = walker::dir_size(&rev_path);
+                        if size > 0 {
+                            entries.push(ScannedEntry {
+                                path: rev_path,
+                                size,
+                                category: Category::LinuxSpecific,
+                                safety: SafetyLevel::Caution,
+                                description: format!(
+                                    "Snap old revision: {snap_name} rev {rev_name}"
+                                ),
+                                item_count: None,
+                            });
                         }
                     }
                 }
@@ -480,44 +480,44 @@ impl CleanupRule for OldKernelsRule {
 
         // Also check /boot for old vmlinuz/initramfs files
         let boot_dir = PathBuf::from("/boot");
-        if boot_dir.exists() {
-            if let Ok(read_dir) = std::fs::read_dir(&boot_dir) {
-                for entry in read_dir.flatten() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    let path = entry.path();
+        if boot_dir.exists()
+            && let Ok(read_dir) = std::fs::read_dir(&boot_dir)
+        {
+            for entry in read_dir.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                let path = entry.path();
 
-                    if !path.is_file() {
-                        continue;
-                    }
+                if !path.is_file() {
+                    continue;
+                }
 
-                    // Match vmlinuz-*, initramfs-*, initrd.img-*, System.map-*, config-*
-                    let is_kernel_file = name.starts_with("vmlinuz-")
-                        || name.starts_with("initramfs-")
-                        || name.starts_with("initrd.img-")
-                        || name.starts_with("System.map-")
-                        || name.starts_with("config-");
+                // Match vmlinuz-*, initramfs-*, initrd.img-*, System.map-*, config-*
+                let is_kernel_file = name.starts_with("vmlinuz-")
+                    || name.starts_with("initramfs-")
+                    || name.starts_with("initrd.img-")
+                    || name.starts_with("System.map-")
+                    || name.starts_with("config-");
 
-                    if !is_kernel_file {
-                        continue;
-                    }
+                if !is_kernel_file {
+                    continue;
+                }
 
-                    // Check if this file belongs to the running kernel
-                    if name.contains(&running_kernel) {
-                        continue;
-                    }
+                // Check if this file belongs to the running kernel
+                if name.contains(&running_kernel) {
+                    continue;
+                }
 
-                    if let Ok(meta) = path.metadata() {
-                        let size = meta.len();
-                        if size > 0 {
-                            entries.push(ScannedEntry {
-                                path,
-                                size,
-                                category: Category::LinuxSpecific,
-                                safety: SafetyLevel::Danger,
-                                description: format!("Old kernel file: {name}"),
-                                item_count: None,
-                            });
-                        }
+                if let Ok(meta) = path.metadata() {
+                    let size = meta.len();
+                    if size > 0 {
+                        entries.push(ScannedEntry {
+                            path,
+                            size,
+                            category: Category::LinuxSpecific,
+                            safety: SafetyLevel::Danger,
+                            description: format!("Old kernel file: {name}"),
+                            item_count: None,
+                        });
                     }
                 }
             }
@@ -562,24 +562,24 @@ impl CleanupRule for LinuxInstallerRule {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_lowercase();
-                if extensions.iter().any(|ext| name.ends_with(ext)) {
-                    if let Ok(meta) = path.metadata() {
-                        let size = meta.len();
-                        if size > 0 {
-                            let file_name = path
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy()
-                                .to_string();
-                            entries.push(ScannedEntry {
-                                path,
-                                size,
-                                category: Category::LinuxSpecific,
-                                safety: SafetyLevel::Caution,
-                                description: format!("Installer: {file_name}"),
-                                item_count: None,
-                            });
-                        }
+                if extensions.iter().any(|ext| name.ends_with(ext))
+                    && let Ok(meta) = path.metadata()
+                {
+                    let size = meta.len();
+                    if size > 0 {
+                        let file_name = path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
+                        entries.push(ScannedEntry {
+                            path,
+                            size,
+                            category: Category::LinuxSpecific,
+                            safety: SafetyLevel::Caution,
+                            description: format!("Installer: {file_name}"),
+                            item_count: None,
+                        });
                     }
                 }
             }

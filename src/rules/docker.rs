@@ -83,26 +83,24 @@ impl DockerRule {
 
             let size_str = cols[2]; // SIZE column
 
-            if let Some(size) = parse_docker_size(size_str) {
-                if size > 0 {
-                    // Parse the actual reclaimable size (not the percentage)
-                    let reclaim_size = if cols.len() >= 4 {
-                        parse_docker_size(cols[3]).unwrap_or(size)
-                    } else {
-                        size
-                    };
+            if let Some(size) = parse_docker_size(size_str)
+                && size > 0
+            {
+                // Parse the actual reclaimable size (not the percentage)
+                let reclaim_size = if cols.len() >= 4 {
+                    parse_docker_size(cols[3]).unwrap_or(size)
+                } else {
+                    size
+                };
 
-                    entries.push(ScannedEntry {
-                        path: std::path::PathBuf::from(format!("docker:{type_name}")),
-                        size: reclaim_size,
-                        category: Category::Docker,
-                        safety: SafetyLevel::Caution,
-                        description: format!(
-                            "Docker {type_name} (inside VM, reclaimable via prune)"
-                        ),
-                        item_count: None,
-                    });
-                }
+                entries.push(ScannedEntry {
+                    path: std::path::PathBuf::from(format!("docker:{type_name}")),
+                    size: reclaim_size,
+                    category: Category::Docker,
+                    safety: SafetyLevel::Caution,
+                    description: format!("Docker {type_name} (inside VM, reclaimable via prune)"),
+                    item_count: None,
+                });
             }
         }
 

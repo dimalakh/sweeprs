@@ -40,10 +40,10 @@ impl CleanupRule for TestArtifactsRule {
 
         // Special handling for 'coverage' - only in JS projects
         for path in PROJECT_INDEX.find_dirs_by_name("coverage") {
-            if let Some(parent) = path.parent() {
-                if parent.join("package.json").exists() {
-                    all_dirs.push(path);
-                }
+            if let Some(parent) = path.parent()
+                && parent.join("package.json").exists()
+            {
+                all_dirs.push(path);
             }
         }
 

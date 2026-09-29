@@ -70,13 +70,12 @@ fn scan_ds_store_recursive(
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_file() {
-            if let Some(name) = path.file_name() {
-                if name == ".DS_Store" {
-                    if let Ok(meta) = path.metadata() {
-                        *total += meta.len();
-                        *count += 1;
-                    }
-                }
+            if let Some(name) = path.file_name()
+                && name == ".DS_Store"
+                && let Ok(meta) = path.metadata()
+            {
+                *total += meta.len();
+                *count += 1;
             }
         } else if path.is_dir() {
             let name = entry.file_name();

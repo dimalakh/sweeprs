@@ -18,7 +18,7 @@ const RERERE_THRESHOLD: u64 = 1_048_576; // 1 MB
 const COUNT_OBJECTS_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Temp files younger than this may belong to a repack that is running right now.
-const TEMP_FILE_MIN_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+const TEMP_FILE_MIN_AGE: Duration = Duration::from_hours(24);
 
 pub struct GitLfsCacheRule;
 pub struct GitGcRule;
@@ -197,7 +197,7 @@ pub fn busy_reason(git_dir: &Path) -> Option<&'static str> {
 
 /// Git itself ignores a `gc.pid` older than this; a gc killed outright leaves
 /// one behind, and honouring it forever would put the repo off limits for good.
-const GC_PID_STALE_AFTER: Duration = Duration::from_secs(12 * 60 * 60);
+const GC_PID_STALE_AFTER: Duration = Duration::from_hours(12);
 
 fn gc_pid_is_live(path: &Path) -> bool {
     let Ok(meta) = path.metadata() else {
@@ -221,10 +221,10 @@ fn repo_label(store: &Path) -> String {
         .to_string_lossy()
         .to_string();
 
-    if name == ".git" || name.starts_with('.') {
-        if let Some(parent) = store.parent().and_then(Path::file_name) {
-            return parent.to_string_lossy().to_string();
-        }
+    if (name == ".git" || name.starts_with('.'))
+        && let Some(parent) = store.parent().and_then(Path::file_name)
+    {
+        return parent.to_string_lossy().to_string();
     }
     name
 }
@@ -636,7 +636,7 @@ size-garbage: 215552
 
         assert_eq!(busy_reason(&git_dir), Some("a gc is already running"));
 
-        let long_ago = SystemTime::now() - Duration::from_secs(13 * 60 * 60);
+        let long_ago = SystemTime::now() - Duration::from_hours(13);
         std::fs::File::options()
             .write(true)
             .open(&pid_file)

@@ -75,15 +75,15 @@ impl EntryFilter {
         }
 
         // Exclude: entry must NOT match any exclude pattern.
-        if let Some(ref gs) = self.exclude_basename {
-            if match_basename(gs, &entry.path) {
-                return false;
-            }
+        if let Some(ref gs) = self.exclude_basename
+            && match_basename(gs, &entry.path)
+        {
+            return false;
         }
-        if let Some(ref gs) = self.exclude_path {
-            if gs.is_match(&entry.path) {
-                return false;
-            }
+        if let Some(ref gs) = self.exclude_path
+            && gs.is_match(&entry.path)
+        {
+            return false;
         }
 
         true
