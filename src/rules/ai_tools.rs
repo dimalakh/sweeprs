@@ -170,6 +170,10 @@ impl CleanupRule for ClaudeCachesRule {
                 home.join("Library/Caches/claude-cli-nodejs"),
                 "Claude Code CLI cache",
             ),
+            (
+                home.join(".cache/claude-cli-nodejs"),
+                "Claude Code CLI cache",
+            ),
             (support.join("Cache"), "Claude Desktop cache"),
             (support.join("Code Cache"), "Claude Desktop code cache"),
             (support.join("GPUCache"), "Claude Desktop GPU cache"),
@@ -205,15 +209,24 @@ impl CleanupRule for ClaudeCachesRule {
 /// dotfile root such as `~/.codex` or `~/.cursor` also holds `auth.json`,
 /// `config.toml`, `mcp.json`, memories, rules and session history, none of
 /// which can be recovered once deleted. Only the subdirectories the tool
-/// re-fetches on demand belong here.
-const AGENT_PAYLOAD_DIRS: &[(&str, &str)] = &[
-    (".cursor/extensions", "Cursor extensions"),
-    (".antigravity/extensions", "Antigravity extensions"),
-    (".copilot/pkg", "Copilot CLI downloaded packages"),
-    (".codex/cache", "Codex CLI cache"),
-    (".codex/log", "Codex CLI logs"),
-    (".codex/shell_snapshots", "Codex CLI shell snapshots"),
-];
+/// re-fetches on demand belong here; logs and session scratch belong to
+/// `agent_sessions`.
+fn agent_payload_dirs(home: &Path) -> Vec<(PathBuf, &'static str)> {
+    vec![
+        (home.join(".cursor/extensions"), "Cursor extensions"),
+        (
+            home.join(".antigravity/extensions"),
+            "Antigravity extensions",
+        ),
+        (home.join(".copilot/pkg"), "Copilot CLI downloaded packages"),
+        (
+            crate::rules::agent_sessions::codex_home().join("cache"),
+            "Codex CLI cache",
+        ),
+        (home.join(".continue/index"), "Continue codebase index"),
+        (home.join(".gemini/tmp/bin"), "Gemini CLI downloaded tools"),
+    ]
+}
 
 impl CleanupRule for AgentCliDataRule {
     fn name(&self) -> &'static str {
@@ -228,8 +241,7 @@ impl CleanupRule for AgentCliDataRule {
         let home = dirs::home_dir().unwrap_or_default();
         let mut entries = Vec::new();
 
-        for &(dir, description) in AGENT_PAYLOAD_DIRS {
-            let path: PathBuf = home.join(dir);
+        for (path, description) in agent_payload_dirs(&home) {
             if !path.is_dir() {
                 continue;
             }
@@ -281,10 +293,13 @@ mod tests {
     fn payload_dirs_never_name_a_dotfile_root() {
         // A bare `.codex` or `.cursor` would take auth.json, mcp.json, memories,
         // rules and session history with it.
-        for (dir, _) in AGENT_PAYLOAD_DIRS {
+        let home = dirs::home_dir().unwrap_or_default();
+        let codex = crate::rules::agent_sessions::codex_home();
+        for (dir, _) in agent_payload_dirs(&home) {
             assert!(
-                Path::new(dir).components().count() > 1,
-                "{dir} is a dotfile root, not a re-downloadable payload"
+                dir.parent() != Some(home.as_path()) && dir != codex,
+                "{} is a dotfile root, not a re-downloadable payload",
+                dir.display()
             );
         }
     }

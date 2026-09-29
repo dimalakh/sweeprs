@@ -300,7 +300,7 @@ sweeprs config --path
 | LLM Models | `llm` | Caution | Ollama, HuggingFace, LM Studio, GPT4All, Jan AI, llama.cpp |
 | Simulators | `simulator` | Caution | iOS simulator runtimes and devices, Android AVDs and system images |
 | AI Tools | `ai` | Caution | Superseded Claude Code versions, Claude Desktop VM, Claude/Cursor/Codex/Copilot caches and downloaded extensions |
-| AI Agent Sessions | `agent-sessions` | Danger | Transcripts, chat threads, rewind checkpoints, scratchpads and clean pushed worktrees from Claude Code, Codex, Cursor, Gemini CLI and Copilot CLI -- only once idle past the configured age |
+| AI Agent Sessions | `agent-sessions` | Danger | Transcripts, chat threads, rewind checkpoints, scratchpads and clean pushed worktrees from Claude Code, Codex, Cursor, Gemini CLI, Copilot CLI, Zed, opencode and other agents -- only once idle past the configured age |
 | Trash | `trash` | Danger | Trash contents (~/.Trash on macOS, ~/.local/share/Trash on Linux) |
 | Large Files | `large-files` | Danger | Files over 500 MB (configurable) |
 | Duplicates | `duplicates` | Danger | Identical files by content hash (disabled by default) |
@@ -363,23 +363,40 @@ What makes any of it offerable is age. Only sessions untouched for longer than
 `--resume`, `--continue` and rewind can still reach them. The age is the newest
 file anywhere under the session, not the directory's own timestamp.
 
-Covered: Claude Code transcripts and file checkpoints, Codex rollout
-transcripts, Cursor agent sessions, chat threads and edit snapshots, and the
-scratch and log directories of Gemini CLI and Copilot CLI. State whose session
-was already deleted -- a checkpoint directory with no transcript left -- is
-listed without an age gate, since nothing can reach it at any age.
+Transcripts and checkpoints, all Danger: Claude Code transcripts and file
+checkpoints, Codex rollouts (live and archived), Cursor agent sessions, chat
+threads, per-project agent transcripts and edit snapshots, Gemini CLI and Qwen
+Code project sessions, Copilot CLI sessions, Goose and Continue sessions, Cline
+and Roo Code tasks in every VS Code fork, Zed agent threads, opencode edit
+snapshots, and Aider chat histories inside repositories.
 
-Agent worktrees (`~/.cursor/worktrees/<project>/<branch>`) are real source
-trees, so age is not what makes them safe to offer. Each one is only listed once
-git confirms there is nothing in it to lose: `status --porcelain` clean, and a
-HEAD that some remote branch already contains. A worktree that fails either
-check -- or that git cannot open, because its `gitdir` was pruned -- is reported
-with the reason and a size of zero, so cleaning skips it while you still get
-told it is there.
+Scratch and logs, Caution: Claude Code shell snapshots, session environments,
+paste cache, debug logs and unsent telemetry; Codex temp files, logs and shell
+snapshots; Copilot CLI logs, Cursor AI edit tracking, opencode logs and Zed hang
+traces.
 
-Session scratchpads (`/tmp/claude-<uid>/<project>/<session>/`) follow the
-transcripts: aged out on the same cutoff, or listed immediately when the session
-they belong to no longer exists.
+Claude Code state whose session was already deleted (checkpoints, environments,
+todo lists and tool results with no transcript left) is listed once it is a day
+old rather than after the full cutoff, since nothing can reach it. Only state
+named after a session id qualifies. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are
+honoured.
+
+Agent worktrees are real source trees, so age is not what makes them safe to
+offer. Cursor's (`~/.cursor/worktrees`), the Codex app's (`~/.codex/worktrees`)
+and Claude Code's (`<repo>/.claude/worktrees`) are each listed only once git
+confirms there is nothing in them to lose: no modified or untracked file
+(whatever `status.showUntrackedFiles` says), no ignored file other than
+regenerable output such as `node_modules/` (an ignored `.env` keeps it), and a
+HEAD that some remote branch already contains. A standalone clone, or a
+worktree git cannot open because its `gitdir` was pruned, is kept too. A kept
+worktree is reported with the reason and a size of zero and cannot be selected,
+so you are told it is there without being able to delete it. Cleaning runs
+`git worktree remove`, which re-checks the tree and unregisters it from the
+repository.
+
+Session scratchpads (`/tmp/claude-<uid>/<project>/<session>/`, your own uid
+only) follow the transcripts: aged out on the same cutoff, or listed after a day
+when the session they belong to no longer exists.
 
 Dotfile roots are never named. `~/.claude`, `~/.codex` and `~/.cursor` also hold
 credentials, config, memories, rules and skills; only individual subdirectories

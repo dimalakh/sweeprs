@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::config::Config;
-use crate::rules::{brew, docker, empty_dirs, git_data, ide};
+use crate::rules::{agent_sessions, brew, docker, empty_dirs, git_data, ide};
 use crate::util;
 
 const PREFIXES: &[&str] = &[
@@ -30,6 +30,7 @@ const PREFIXES: &[&str] = &[
     "simctl-device:",
     "empty-dirs:",
     "editor-history:",
+    "agent-worktree:",
 ];
 
 pub fn is_virtual(path: &Path) -> bool {
@@ -71,6 +72,12 @@ pub fn label(path_str: &str) -> String {
         } else {
             format!("xcrun simctl delete ({count} devices)")
         };
+    }
+    if let Some(worktree) = path_str.strip_prefix("agent-worktree:") {
+        return format!(
+            "git worktree remove {}",
+            util::tilde_path(&PathBuf::from(worktree))
+        );
     }
     if let Some(history) = path_str.strip_prefix("editor-history:") {
         return format!(
@@ -122,6 +129,9 @@ pub fn clean(path_str: &str, config: &Config, git_gc_timeout: Duration) -> io::R
     }
     if path_str.starts_with("editor-history:") {
         return ide::clean_editor_history(path_str, config);
+    }
+    if path_str.starts_with("agent-worktree:") {
+        return agent_sessions::clean_agent_worktree(path_str);
     }
     if path_str.starts_with("journal:") {
         return linux_clean(LinuxCleanup::Journal).map(|()| None);
