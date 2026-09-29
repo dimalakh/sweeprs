@@ -211,20 +211,37 @@ impl CleanupRule for ClaudeCachesRule {
 /// which can be recovered once deleted. Only the subdirectories the tool
 /// re-fetches on demand belong here; logs and session scratch belong to
 /// `agent_sessions`.
+/// Where current Copilot CLI versions keep `pkg`, relative to home. Older
+/// versions used `pkg` inside the Copilot directory.
+fn copilot_pkg_cache() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Library/Caches/copilot/pkg"
+    } else {
+        ".cache/copilot/pkg"
+    }
+}
+
 fn agent_payload_dirs(home: &Path) -> Vec<(PathBuf, &'static str)> {
+    use crate::rules::agent_sessions::{codex_home, copilot_home, gemini_home, qwen_home};
+
     vec![
         (home.join(".cursor/extensions"), "Cursor extensions"),
         (
             home.join(".antigravity/extensions"),
             "Antigravity extensions",
         ),
-        (home.join(".copilot/pkg"), "Copilot CLI downloaded packages"),
         (
-            crate::rules::agent_sessions::codex_home().join("cache"),
-            "Codex CLI cache",
+            copilot_home().join("pkg"),
+            "Copilot CLI downloaded packages",
         ),
+        (
+            home.join(copilot_pkg_cache()),
+            "Copilot CLI downloaded packages",
+        ),
+        (codex_home().join("cache"), "Codex CLI cache"),
         (home.join(".continue/index"), "Continue codebase index"),
-        (home.join(".gemini/tmp/bin"), "Gemini CLI downloaded tools"),
+        (gemini_home().join("tmp/bin"), "Gemini CLI downloaded tools"),
+        (qwen_home().join("bin"), "Qwen Code downloaded tools"),
     ]
 }
 

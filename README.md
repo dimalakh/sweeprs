@@ -365,25 +365,30 @@ file anywhere under the session, not the directory's own timestamp.
 
 Transcripts and checkpoints, all Danger: Claude Code transcripts and file
 checkpoints, Codex rollouts (live and archived), Cursor agent sessions, chat
-threads, per-project agent transcripts and edit snapshots, Gemini CLI and Qwen
-Code project sessions, Copilot CLI sessions, Goose and Continue sessions, Cline
-and Roo Code tasks in every VS Code fork, Zed agent threads, opencode edit
-snapshots, and Aider chat histories inside repositories.
+threads, per-project agent transcripts and edit snapshots, Gemini CLI project
+sessions and chat history, Qwen Code chats and checkpoints, Copilot CLI
+sessions, Cline sessions and tasks (in `~/.cline` and in every VS Code fork),
+Roo Code tasks, opencode edit snapshots, and Aider chat histories inside
+repositories. Zed's agent threads, Goose's and Continue's sessions and
+opencode's legacy session store share one database or index each, so they are
+only offered whole.
 
 Scratch and logs, Caution: Claude Code shell snapshots, session environments,
 paste cache, debug logs and unsent telemetry; Codex temp files, logs and shell
-snapshots; Copilot CLI logs, Cursor AI edit tracking, opencode logs and Zed hang
-traces.
+snapshots; Copilot CLI logs, Cursor AI edit tracking, opencode logs and tool
+output, and Zed hang traces.
 
 Claude Code state whose session was already deleted (checkpoints, environments,
 todo lists and tool results with no transcript left) is listed once it is a day
 old rather than after the full cutoff, since nothing can reach it. Only state
-named after a session id qualifies. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are
-honoured.
+named after a session id qualifies. `CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+`GEMINI_CLI_HOME`, `QWEN_HOME`, `COPILOT_HOME`, `CLINE_DIR`, `CLINE_DATA_DIR`
+and `XDG_DATA_HOME` are honoured.
 
 Agent worktrees are real source trees, so age is not what makes them safe to
-offer. Cursor's (`~/.cursor/worktrees`), the Codex app's (`~/.codex/worktrees`)
-and Claude Code's (`<repo>/.claude/worktrees`) are each listed only once git
+offer. Cursor's (`~/.cursor/worktrees`), Codex's (`~/.codex/worktrees`),
+opencode's (`~/.local/share/opencode/worktree`) and Claude Code's
+(`<repo>/.claude/worktrees`) are each listed only once git
 confirms there is nothing in them to lose: no modified or untracked file
 (whatever `status.showUntrackedFiles` says), no ignored file other than
 regenerable output such as `node_modules/` (an ignored `.env` keeps it), and a
@@ -395,7 +400,8 @@ so you are told it is there without being able to delete it. Cleaning runs
 repository.
 
 Session scratchpads (`/tmp/claude-<uid>/<project>/<session>/`, your own uid
-only) follow the transcripts: aged out on the same cutoff, or listed after a day
+only, moved by `CLAUDE_CODE_TMPDIR` and on Linux by `$TMPDIR`) follow the
+transcripts: aged out on the same cutoff, or listed after a day
 when the session they belong to no longer exists.
 
 Dotfile roots are never named. `~/.claude`, `~/.codex` and `~/.cursor` also hold

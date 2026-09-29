@@ -66,6 +66,33 @@ pub fn codex_home() -> PathBuf {
     env_dir("CODEX_HOME").unwrap_or_else(|| home().join(".codex"))
 }
 
+/// Gemini CLI's directory. `GEMINI_CLI_HOME` stands in for `$HOME`.
+pub fn gemini_home() -> PathBuf {
+    env_dir("GEMINI_CLI_HOME")
+        .unwrap_or_else(home)
+        .join(".gemini")
+}
+
+/// Qwen Code's directory, which `QWEN_HOME` replaces outright.
+pub fn qwen_home() -> PathBuf {
+    env_dir("QWEN_HOME").unwrap_or_else(|| home().join(".qwen"))
+}
+
+/// Copilot CLI's directory, which `COPILOT_HOME` relocates.
+pub fn copilot_home() -> PathBuf {
+    env_dir("COPILOT_HOME").unwrap_or_else(|| home().join(".copilot"))
+}
+
+/// Cline's data directory: `CLINE_DATA_DIR`, else `data` under `CLINE_DIR`
+/// or `~/.cline`.
+fn cline_data() -> PathBuf {
+    env_dir("CLINE_DATA_DIR").unwrap_or_else(|| {
+        env_dir("CLINE_DIR")
+            .unwrap_or_else(|| home().join(".cline"))
+            .join("data")
+    })
+}
+
 /// The XDG data directory. Node and Go CLIs use it on macOS too, where
 /// `dirs::data_dir` would answer `~/Library/Application Support`.
 fn xdg_data() -> PathBuf {
@@ -277,20 +304,25 @@ fn per_session_sources() -> Vec<(PathBuf, &'static str)> {
     let home = home();
     let cursor = home.join(".cursor");
 
+    let copilot = copilot_home();
+    let cline = cline_data();
+
     let mut sources = vec![
         (cursor.join("acp-sessions"), "Cursor agent session"),
         (cursor.join("chats"), "Cursor chat thread"),
-        (
-            home.join(".copilot/history-session-state"),
-            "Copilot CLI session",
-        ),
-        (home.join(".copilot/session-state"), "Copilot CLI session"),
-        (xdg_data().join("goose/sessions"), "Goose session"),
-        (home.join(".continue/sessions"), "Continue session"),
+        // `history-session-state` is where versions before 0.0.400 kept them.
+        (copilot.join("history-session-state"), "Copilot CLI session"),
+        (copilot.join("session-state"), "Copilot CLI session"),
+        (gemini_home().join("history"), "Gemini CLI chat history"),
+        (cline.join("sessions"), "Cline session"),
+        (cline.join("tasks"), "Cline task"),
     ];
 
     for project in children(&cursor.join("projects")) {
         sources.push((project.join("agent-transcripts"), "Cursor agent transcript"));
+    }
+    for project in children(&qwen_home().join("projects")) {
+        sources.push((project.join("chats"), "Qwen Code chat"));
     }
 
     for support in crate::rules::ide::EDITOR_SUPPORT_DIRS {
@@ -305,38 +337,59 @@ fn per_session_sources() -> Vec<(PathBuf, &'static str)> {
     sources
 }
 
-/// Gemini CLI, and Qwen Code which forks it, keep one directory of chats and
-/// checkpoints per project under `tmp/<sha256 of the project path>`. The same
-/// `tmp` also holds tools they download, such as `bin/`.
-fn hashed_project_sessions() -> Vec<(PathBuf, &'static str)> {
-    let home = home();
-    [
-        (home.join(".gemini/tmp"), "Gemini CLI project sessions"),
-        (home.join(".qwen/tmp"), "Qwen Code project sessions"),
-    ]
-    .into_iter()
-    .flat_map(|(dir, label)| {
-        children(&dir).into_iter().filter_map(move |path| {
-            let name = path.file_name()?.to_string_lossy();
-            (name.len() == 64 && name.bytes().all(|b| b.is_ascii_hexdigit()))
-                .then_some((path, label))
-        })
+fn is_sha256_name(path: &Path) -> bool {
+    path.file_name().is_some_and(|n| {
+        let n = n.to_string_lossy();
+        n.len() == 64 && n.bytes().all(|b| b.is_ascii_hexdigit())
     })
-    .collect()
 }
 
-/// Zed keeps every agent thread in one database, so it is all or nothing.
-fn zed_threads(cutoff: Duration) -> Option<ScannedEntry> {
-    let threads = zed_data().join("threads");
-    let (days, size) = aged(&threads, cutoff)?;
-    (size >= MIN_SESSION_SIZE).then(|| {
-        entry(
-            threads,
-            size,
-            SafetyLevel::Danger,
-            format!("Zed agent threads, all of them, {days} days idle"),
-        )
-    })
+fn gemini_project_dirs(tmp: &Path) -> Vec<PathBuf> {
+    children(tmp)
+        .into_iter()
+        .filter(|p| p.join(".project_root").is_file() || is_sha256_name(p))
+        .collect()
+}
+
+/// Per-project directories under Gemini CLI's and Qwen Code's `tmp`.
+///
+/// Gemini names them after the project and marks each with `.project_root`,
+/// migrating older sha256-named ones; Qwen still hashes, and keeps checkpoints
+/// there. The same `tmp` holds downloaded tools such as `bin/`, which neither
+/// test admits.
+fn project_session_dirs() -> Vec<(PathBuf, &'static str)> {
+    let gemini = gemini_project_dirs(&gemini_home().join("tmp"))
+        .into_iter()
+        .map(|p| (p, "Gemini CLI project sessions and checkpoints"));
+    let qwen = children(&qwen_home().join("tmp"))
+        .into_iter()
+        .filter(|p| is_sha256_name(p))
+        .map(|p| (p, "Qwen Code project checkpoints"));
+    gemini.chain(qwen).collect()
+}
+
+/// Stores whose sessions share one database or index, offered only whole.
+///
+/// Zed and Goose keep every session in one SQLite file (the directory goes so
+/// its WAL goes with it), Continue indexes its sessions in `sessions.json`,
+/// and opencode's legacy store splits each session across `session/`,
+/// `message/` and `part/`.
+fn whole_session_stores() -> Vec<(PathBuf, &'static str)> {
+    vec![
+        (zed_data().join("threads"), "Zed agent threads, all of them"),
+        (
+            xdg_data().join("goose/sessions"),
+            "Goose sessions, all of them",
+        ),
+        (
+            home().join(".continue/sessions"),
+            "Continue sessions, all of them",
+        ),
+        (
+            xdg_data().join("opencode/storage"),
+            "opencode legacy session store, all of it",
+        ),
+    ]
 }
 
 /// Aider writes its chat log into the repository it was run in.
@@ -380,12 +433,17 @@ impl CleanupRule for AgentTranscriptRule {
             SafetyLevel::Danger,
         ));
         entries.extend(aged_paths(
-            hashed_project_sessions(),
+            project_session_dirs(),
             cutoff,
             MIN_SESSION_SIZE,
             SafetyLevel::Danger,
         ));
-        entries.extend(zed_threads(cutoff));
+        entries.extend(aged_paths(
+            whole_session_stores(),
+            cutoff,
+            MIN_SESSION_SIZE,
+            SafetyLevel::Danger,
+        ));
         entries.extend(aider_histories(cutoff));
         entries
     }
@@ -460,9 +518,13 @@ fn scratch_dirs() -> Vec<(PathBuf, &'static str)> {
         (codex.join(".tmp"), "Codex temporary files"),
         (codex.join("log"), "Codex logs"),
         (codex.join("shell_snapshots"), "Codex shell snapshots"),
-        (home.join(".copilot/logs"), "Copilot CLI logs"),
+        (copilot_home().join("logs"), "Copilot CLI logs"),
         (home.join(".cursor/ai-tracking"), "Cursor AI edit tracking"),
         (xdg_data().join("opencode/log"), "opencode logs"),
+        (
+            xdg_data().join("opencode/tool-output"),
+            "opencode tool output",
+        ),
         (zed_data().join("hang_traces"), "Zed hang traces"),
     ]
 }
@@ -745,13 +807,15 @@ fn find_checkouts(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Cursor checks out under `~/.cursor/worktrees/<project>/<branch>`, the Codex
-/// app under `~/.codex/worktrees`, and Claude Code inside the repository at
+/// Cursor checks out under `~/.cursor/worktrees/<project>/<branch>`, Codex
+/// under `~/.codex/worktrees/<id>/<repo>`, opencode under its data dir's
+/// `worktree/<project>/`, and Claude Code inside the repository at
 /// `.claude/worktrees/<name>`.
 fn worktree_candidates() -> Vec<PathBuf> {
     let mut found = Vec::new();
     find_checkouts(&home().join(".cursor/worktrees"), 2, &mut found);
     find_checkouts(&codex_home().join("worktrees"), 2, &mut found);
+    find_checkouts(&xdg_data().join("opencode/worktree"), 2, &mut found);
     for repo in PROJECT_INDEX.git_roots() {
         find_checkouts(&repo.join(".claude/worktrees"), 1, &mut found);
     }
@@ -855,14 +919,30 @@ pub fn clean_agent_worktree(entry_path: &str) -> io::Result<Option<u64>> {
 /// Laid out as `<tmp>/claude-<uid>/<project-slug>/<session-id>/`, so a session
 /// still in progress is distinguishable from one that ended months ago. Only
 /// this user's root is considered; other users' are not ours to judge.
-fn scratchpad_root() -> Option<PathBuf> {
-    let tmp = PathBuf::from(if cfg!(target_os = "macos") {
-        "/private/tmp"
+///
+/// `CLAUDE_CODE_TMPDIR` moves the tree, and on Linux so does `$TMPDIR`. macOS
+/// uses `/private/tmp` whatever `$TMPDIR` says.
+fn scratchpad_roots() -> Vec<PathBuf> {
+    let Some(uid) = current_uid() else {
+        return Vec::new();
+    };
+    let mut bases: Vec<PathBuf> = env_dir("CLAUDE_CODE_TMPDIR").into_iter().collect();
+    if cfg!(target_os = "macos") {
+        bases.push(PathBuf::from("/private/tmp"));
     } else {
-        "/tmp"
-    });
-    let root = tmp.join(format!("claude-{}", current_uid()?));
-    root.is_dir().then_some(root)
+        bases.extend(env_dir("TMPDIR"));
+        bases.push(PathBuf::from("/tmp"));
+    }
+
+    let mut roots: Vec<PathBuf> = bases
+        .into_iter()
+        .map(|base| base.join(format!("claude-{uid}")))
+        .filter(|root| root.is_dir())
+        .map(|root| root.canonicalize().unwrap_or(root))
+        .collect();
+    roots.sort();
+    roots.dedup();
+    roots
 }
 
 #[cfg(unix)]
@@ -886,13 +966,13 @@ impl CleanupRule for AgentScratchpadRule {
     }
 
     fn scan(&self, config: &Config) -> Vec<ScannedEntry> {
-        let Some(root) = scratchpad_root() else {
-            return Vec::new();
-        };
         let cutoff = cutoff(config);
         let live = live_claude_sessions();
 
-        children(&root)
+        scratchpad_roots()
+            .iter()
+            .flat_map(|root| children(root))
+            .collect::<Vec<_>>()
             .par_iter()
             .flat_map(|project| {
                 let slug = project
@@ -1140,5 +1220,21 @@ mod tests {
         );
         assert_eq!(owning_session(Path::new("bash-edit-diff")), None);
         assert_eq!(owning_session(Path::new("memory")), None);
+    }
+
+    #[test]
+    fn gemini_project_dirs_are_told_apart_from_its_downloaded_tools() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        let slug = root.join("sweeprs");
+        let hashed = root.join("a".repeat(64));
+        for dir in [&slug, &hashed, &root.join("bin"), &root.join("design-sync")] {
+            std::fs::create_dir(dir).expect("dir");
+        }
+        std::fs::write(slug.join(".project_root"), b"/home/me/sweeprs").expect("marker");
+
+        let mut found = gemini_project_dirs(root);
+        found.sort();
+        assert_eq!(found, [hashed, slug]);
     }
 }
