@@ -122,14 +122,14 @@ pub fn clean(entries: &[ScannedEntry], options: &CleanOptions) -> Result<()> {
     let (to_clean, clean_size) = if options.skip_confirm {
         (filtered, total_size)
     } else {
-        let selected = interactive_confirm(&category_groups)?;
-        if selected.is_empty() {
-            println!("Cancelled.");
+        let choice = interactive_confirm(&category_groups)?;
+        if choice == Choice::Cancel {
+            println!("{}", "Cancelled, nothing was deleted.".dim());
             return Ok(());
         }
         let to_clean: Vec<&ScannedEntry> = filtered
             .into_iter()
-            .filter(|e| selected.contains(&e.category))
+            .filter(|e| choice.includes(e))
             .collect();
         let size = to_clean.iter().map(|e| e.size).sum();
         (to_clean, size)
@@ -193,27 +193,73 @@ fn print_clean_summary(
     }
 }
 
-/// Interactive confirmation that lets the user choose what to clean.
+/// What the user chose at the confirmation prompt.
+#[derive(Debug, PartialEq, Eq)]
+enum Choice {
+    Cancel,
+    Everything,
+    /// Every entry at this safety level or safer, in any category. A category
+    /// is not uniformly one level (a Safe category can hold a Caution entry),
+    /// so "safe only" has to be decided per entry.
+    UpTo(SafetyLevel),
+    Categories(rustc_hash::FxHashSet<Category>),
+}
+
+impl Choice {
+    fn includes(&self, entry: &ScannedEntry) -> bool {
+        match self {
+            Self::Cancel => false,
+            Self::Everything => true,
+            Self::UpTo(level) => entry.safety <= *level,
+            Self::Categories(categories) => categories.contains(&entry.category),
+        }
+    }
+}
+
+/// Parse a prompt answer against the numbered categories.
 ///
-/// Returns the set of categories the user chose to clean, or empty if cancelled.
-///
-/// Accepts:
-///   y / a / all  -- clean everything
-///   n / q        -- cancel
-///   s / safe     -- clean only Safe categories
-///   c / caution  -- clean Safe + Caution categories
-///   1,3,5        -- clean specific categories by number
-///   1-4          -- clean a range of categories
-fn interactive_confirm(
-    category_groups: &[(Category, Vec<&ScannedEntry>)],
-) -> Result<rustc_hash::FxHashSet<Category>> {
+/// Accepts `y`/`a`/`all`, `n`/`q` (or nothing), `s`/`safe`, `c`/`caution`,
+/// and category numbers as a list and ranges (`1,3-5,7`).
+fn parse_choice(input: &str, category_groups: &[(Category, Vec<&ScannedEntry>)]) -> Choice {
+    let input = input.trim().to_lowercase();
+    match input.as_str() {
+        "" | "n" | "no" | "q" => return Choice::Cancel,
+        "y" | "yes" | "a" | "all" => return Choice::Everything,
+        "s" | "safe" => return Choice::UpTo(SafetyLevel::Safe),
+        "c" | "caution" => return Choice::UpTo(SafetyLevel::Caution),
+        _ => {}
+    }
+
+    let count = category_groups.len();
+    let mut selected = rustc_hash::FxHashSet::default();
+    for part in input.split(',').map(str::trim) {
+        let range: Option<(usize, usize)> = match part.split_once('-') {
+            Some((start, end)) => start.trim().parse().ok().zip(end.trim().parse().ok()),
+            None => part.parse().ok().map(|n| (n, n)),
+        };
+        let Some((start, end)) = range else { continue };
+        for number in start.max(1)..=end.min(count) {
+            selected.insert(category_groups[number - 1].0);
+        }
+    }
+
+    if selected.is_empty() {
+        Choice::Cancel
+    } else {
+        Choice::Categories(selected)
+    }
+}
+
+/// Ask which of the listed entries to clean.
+fn interactive_confirm(category_groups: &[(Category, Vec<&ScannedEntry>)]) -> Result<Choice> {
     let has_danger = category_groups
         .iter()
-        .any(|(cat, _)| cat.default_safety() == SafetyLevel::Danger);
+        .flat_map(|(_, entries)| entries)
+        .any(|e| e.safety == SafetyLevel::Danger);
     if has_danger {
         println!(
             "\n{}",
-            "Some categories are Danger: what they hold has no other copy."
+            "Some items are Danger: what they hold has no other copy."
                 .red()
                 .bold()
         );
@@ -240,67 +286,14 @@ fn interactive_confirm(
 
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
-
-    if input.is_empty() || input == "n" || input == "q" || input == "no" {
-        return Ok(rustc_hash::FxHashSet::default());
+    let choice = parse_choice(&input, category_groups);
+    if choice == Choice::Cancel
+        && !input.trim().is_empty()
+        && !matches!(input.trim(), "n" | "no" | "q")
+    {
+        println!("{}", "No valid selection.".yellow());
     }
-
-    // "y" / "a" / "all" / "yes" -- clean everything
-    if input == "y" || input == "a" || input == "all" || input == "yes" {
-        return Ok(category_groups.iter().map(|(cat, _)| *cat).collect());
-    }
-
-    // "s" / "safe" -- only Safe categories
-    if input == "s" || input == "safe" {
-        return Ok(category_groups
-            .iter()
-            .filter(|(cat, _)| cat.default_safety() == SafetyLevel::Safe)
-            .map(|(cat, _)| *cat)
-            .collect());
-    }
-
-    // "c" / "caution" -- Safe + Caution
-    if input == "c" || input == "caution" {
-        return Ok(category_groups
-            .iter()
-            .filter(|(cat, _)| {
-                matches!(
-                    cat.default_safety(),
-                    SafetyLevel::Safe | SafetyLevel::Caution
-                )
-            })
-            .map(|(cat, _)| *cat)
-            .collect());
-    }
-
-    // Parse numbers: "1,3,5" or "1-4" or "1,3-5,7"
-    let mut selected = rustc_hash::FxHashSet::default();
-    for part in input.split(',') {
-        let part = part.trim();
-        if let Some((start, end)) = part.split_once('-') {
-            let start: usize = start.trim().parse().unwrap_or(0);
-            let end: usize = end.trim().parse().unwrap_or(0);
-            if start >= 1 && end >= start {
-                for i in start..=end {
-                    if i <= category_groups.len() {
-                        selected.insert(category_groups[i - 1].0);
-                    }
-                }
-            }
-        } else if let Ok(num) = part.parse::<usize>()
-            && num >= 1
-            && num <= category_groups.len()
-        {
-            selected.insert(category_groups[num - 1].0);
-        }
-    }
-
-    if selected.is_empty() {
-        println!("No valid selection. Cancelled.");
-    }
-
-    Ok(selected)
+    Ok(choice)
 }
 
 /// Check if a filesystem path requires root privileges to modify.
@@ -623,6 +616,58 @@ fn archive_directory(dir: &Path, archive_dir: Option<&Path>) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn listed(category: Category, safety: SafetyLevel) -> ScannedEntry {
+        ScannedEntry {
+            path: PathBuf::from("/home/me/x"),
+            size: 1,
+            category,
+            safety,
+            description: String::new(),
+            item_count: None,
+        }
+    }
+
+    #[test]
+    fn safe_only_is_decided_per_entry_not_per_category() {
+        // A Safe category holding a Caution entry, and a Caution category
+        // holding a Safe one.
+        let build_caution = listed(Category::BuildArtifact, SafetyLevel::Caution);
+        let build_safe = listed(Category::BuildArtifact, SafetyLevel::Safe);
+        let sim_safe = listed(Category::Simulator, SafetyLevel::Safe);
+        let sim_danger = listed(Category::Simulator, SafetyLevel::Danger);
+        let groups = vec![
+            (Category::BuildArtifact, vec![&build_safe, &build_caution]),
+            (Category::Simulator, vec![&sim_safe, &sim_danger]),
+        ];
+
+        let safe = parse_choice("s", &groups);
+        assert!(safe.includes(&build_safe) && safe.includes(&sim_safe));
+        assert!(!safe.includes(&build_caution));
+
+        let caution = parse_choice(" C ", &groups);
+        assert!(caution.includes(&build_caution));
+        assert!(!caution.includes(&sim_danger));
+    }
+
+    #[test]
+    fn numbers_and_ranges_select_categories_and_ignore_what_is_out_of_range() {
+        let a = listed(Category::BuildArtifact, SafetyLevel::Safe);
+        let b = listed(Category::Simulator, SafetyLevel::Caution);
+        let c = listed(Category::Docker, SafetyLevel::Caution);
+        let groups = vec![
+            (Category::BuildArtifact, vec![&a]),
+            (Category::Simulator, vec![&b]),
+            (Category::Docker, vec![&c]),
+        ];
+
+        let choice = parse_choice("1, 3-9", &groups);
+        assert!(choice.includes(&a) && choice.includes(&c));
+        assert!(!choice.includes(&b));
+        assert_eq!(parse_choice("0,42,x", &groups), Choice::Cancel);
+        assert_eq!(parse_choice("", &groups), Choice::Cancel);
+        assert_eq!(parse_choice("all", &groups), Choice::Everything);
+    }
 
     #[test]
     fn deleting_an_avd_payload_takes_its_registering_ini_too() {
