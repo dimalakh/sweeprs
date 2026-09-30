@@ -1,6 +1,11 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [0.8.2] - 2026-09-30
+
+### Bug Fixes
+
+- *(tui)* Keep selections, filters and the cursor across scans
 ## [0.8.1] - 2026-09-30
 
 ### Bug Fixes
