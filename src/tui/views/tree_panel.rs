@@ -5,7 +5,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::output;
-use crate::scanner::entry::SafetyLevel;
 use crate::tui::app::App;
 use crate::tui::theme;
 use crate::tui::tree::{CheckState, EntryNode, RowRef};
@@ -175,7 +174,7 @@ fn render_category_row(
     let cat = &tree.categories[ci];
     let arrow = if cat.expanded { "▾" } else { "▸" };
     let check = check_box(tree.cached_category_check_state(ci));
-    let safety_color = safety_to_color(cat.category.default_safety());
+    let safety_color = theme::safety_color(cat.category.default_safety());
 
     Row {
         prefix: format!(" {arrow} {check} "),
@@ -207,7 +206,7 @@ fn render_group_row(
     } else {
         "[!]"
     };
-    let safety_color = safety_to_color(group.safety);
+    let safety_color = theme::safety_color(group.safety);
 
     Row {
         prefix: format!("   {arrow} {check} "),
@@ -238,7 +237,7 @@ fn render_entry_row(
         (true, true) => "[x]",
         (true, false) => "[ ]",
     };
-    let safety_color = safety_to_color(entry.safety);
+    let safety_color = theme::safety_color(entry.safety);
 
     Row {
         prefix: format!("       {check} "),
@@ -252,13 +251,4 @@ fn render_entry_row(
         bar: size_bar(entry.size, group.total_size, BAR_WIDTH, safety_color),
     }
     .render(width, is_cursor)
-}
-
-fn safety_to_color(safety: SafetyLevel) -> ratatui::style::Color {
-    match safety {
-        SafetyLevel::Safe => theme::SAFE_COLOR,
-        SafetyLevel::Caution => theme::CAUTION_COLOR,
-        SafetyLevel::Danger => theme::DANGER_COLOR,
-        SafetyLevel::Error => theme::ERROR_COLOR,
-    }
 }

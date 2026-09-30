@@ -4,12 +4,12 @@ use std::time::SystemTime;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::cleaner;
 use crate::config::Config;
 use crate::rules;
 use crate::scanner;
 use crate::scanner::ScanUpdate;
-use crate::scanner::entry::{SafetyLevel, ScanResult, ScannedEntry};
+use crate::scanner::entry::{ScanResult, ScannedEntry};
+use crate::tui::deletion::DeletionJob;
 use crate::tui::tree::{RowRef, Tree};
 use crate::tui::views::View;
 use crate::virtual_entry;
@@ -27,6 +27,7 @@ pub struct App {
     pub cursor: usize,
     pub scroll_offset: usize,
     pub selected_for_deletion: Vec<ScannedEntry>,
+    pub deletion: Option<DeletionJob>,
     pub config: Config,
     pub scan_receiver: Option<mpsc::Receiver<ScanUpdate>>,
     pub scan_rules_done: usize,
@@ -55,6 +56,7 @@ impl App {
             cursor: 0,
             scroll_offset: 0,
             selected_for_deletion: Vec::new(),
+            deletion: None,
             config,
             scan_receiver: None,
             scan_rules_done: 0,
@@ -178,13 +180,19 @@ impl App {
         self.needs_redraw = true;
 
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            self.running = false;
+            // Quitting mid-deletion would kill the worker partway through an
+            // `rm`; stop after the current item instead.
+            match &self.deletion {
+                Some(job) if !job.is_finished() => job.stop(),
+                _ => self.running = false,
+            }
             return;
         }
 
         match self.view {
             View::Main => self.handle_main_key(key),
             View::Confirm => self.handle_confirm_key(key),
+            View::Deleting => self.handle_deleting_key(key),
             View::Search => self.handle_search_key(key),
         }
     }
@@ -353,9 +361,9 @@ impl App {
     fn handle_confirm_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char('y') => {
-                self.execute_deletion();
-                self.view = View::Main;
-                self.start_scan();
+                let entries = std::mem::take(&mut self.selected_for_deletion);
+                self.deletion = Some(DeletionJob::start(entries, self.config.clone()));
+                self.view = View::Deleting;
             }
             KeyCode::Char('n') | KeyCode::Esc => {
                 self.view = View::Main;
@@ -396,26 +404,49 @@ impl App {
         }
     }
 
-    fn execute_deletion(&mut self) {
-        for entry in &self.selected_for_deletion {
-            if entry.safety == SafetyLevel::Error {
-                continue;
+    fn handle_deleting_key(&mut self, key: KeyEvent) {
+        let Some(job) = &self.deletion else {
+            self.view = View::Main;
+            return;
+        };
+        if job.is_finished() {
+            if matches!(
+                key.code,
+                KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q' | ' ')
+            ) {
+                self.close_deletion();
             }
-            if virtual_entry::is_virtual(&entry.path) {
-                let _ = virtual_entry::clean(
-                    &entry.path.display().to_string(),
-                    &self.config,
-                    self.config.git_gc_timeout(),
-                );
-                continue;
-            }
-
-            let path = &entry.path;
-            if path.is_dir() || path.is_file() {
-                let _ = cleaner::delete_path(path);
-            }
+        } else if matches!(key.code, KeyCode::Esc | KeyCode::Char('s')) {
+            job.stop();
         }
-        self.selected_for_deletion.clear();
+    }
+
+    /// Pick up progress from a running deletion.
+    pub fn check_deletion(&mut self) {
+        if let Some(job) = &mut self.deletion
+            && job.poll()
+        {
+            self.needs_redraw = true;
+        }
+    }
+
+    pub fn deleting(&self) -> bool {
+        self.deletion.as_ref().is_some_and(|job| !job.is_finished())
+    }
+
+    /// Drop what was deleted from the listing. Rescanning would take as long
+    /// as the first scan, and everything else on disk is as it was.
+    fn close_deletion(&mut self) {
+        let Some(job) = self.deletion.take() else {
+            return;
+        };
+        let removed: rustc_hash::FxHashSet<std::path::PathBuf> =
+            job.removed_paths().into_iter().collect();
+        self.result.entries.retain(|e| !removed.contains(&e.path));
+        self.result.total_size = self.result.entries.iter().map(|e| e.size).sum();
+        Self::save_scan_cache(&self.result);
+        self.rebuild_tree();
+        self.view = View::Main;
     }
 
     fn scan_cache_path() -> std::path::PathBuf {

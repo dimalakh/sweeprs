@@ -1,4 +1,5 @@
 pub mod app;
+pub mod deletion;
 pub mod event;
 pub mod theme;
 pub mod tree;
@@ -40,10 +41,11 @@ pub fn run() -> Result<()> {
 
     while app.running {
         app.check_scan();
+        app.check_deletion();
 
         // Only redraw when state has changed (input, scan updates, etc.)
         // Always redraw while scanning since the progress text changes.
-        if app.needs_redraw || app.scanning {
+        if app.needs_redraw || app.scanning || app.deleting() {
             app.needs_redraw = false;
 
             // Pre-compute values that need &mut self before entering the draw closure.
@@ -126,5 +128,10 @@ pub fn draw(f: &mut ratatui::Frame, app: &mut App, total_reclaimable: u64) {
     // Confirm overlay
     if app.view == View::Confirm {
         views::confirm::render(f, f.area(), &app.selected_for_deletion);
+    }
+    if app.view == View::Deleting
+        && let Some(job) = &app.deletion
+    {
+        views::deleting::render(f, f.area(), job);
     }
 }

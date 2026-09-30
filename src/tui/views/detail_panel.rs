@@ -84,7 +84,7 @@ fn plain(value: String) -> Span<'static> {
 fn safety_span(safety: SafetyLevel) -> Span<'static> {
     Span::styled(
         safety.to_string(),
-        Style::default().fg(safety_to_color(safety)),
+        Style::default().fg(theme::safety_color(safety)),
     )
 }
 
@@ -156,7 +156,7 @@ fn safety_lines<'a>(
                         level,
                         output::plural(count, "item", "items")
                     ),
-                    Style::default().fg(safety_to_color(level)),
+                    Style::default().fg(theme::safety_color(level)),
                 ),
             )
         })
@@ -174,7 +174,7 @@ fn largest<'a>(entries: impl Iterator<Item = &'a EntryNode>, width: usize) -> Ve
         lines.push(Line::from(vec![
             Span::styled(
                 format!("  {:>10}  ", util::human_size(entry.size)),
-                Style::default().fg(safety_to_color(entry.safety)),
+                Style::default().fg(theme::safety_color(entry.safety)),
             ),
             Span::styled(
                 output::truncate_start(&virtual_entry::display(&entry.path), path_room),
@@ -269,13 +269,4 @@ fn path_lines(entry: &EntryNode) -> Vec<Line<'static>> {
             Style::default().fg(theme::FG),
         )),
     ]
-}
-
-fn safety_to_color(safety: SafetyLevel) -> ratatui::style::Color {
-    match safety {
-        SafetyLevel::Safe => theme::SAFE_COLOR,
-        SafetyLevel::Caution => theme::CAUTION_COLOR,
-        SafetyLevel::Danger => theme::DANGER_COLOR,
-        SafetyLevel::Error => theme::ERROR_COLOR,
-    }
 }

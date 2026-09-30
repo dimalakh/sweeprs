@@ -16,3 +16,13 @@ pub const DANGER_COLOR: Color = RED;
 pub const ERROR_COLOR: Color = Color::Rgb(187, 154, 247);
 
 pub const BAR_FILL: Color = Color::Rgb(86, 95, 137);
+
+pub fn safety_color(safety: crate::scanner::entry::SafetyLevel) -> Color {
+    use crate::scanner::entry::SafetyLevel;
+    match safety {
+        SafetyLevel::Safe => SAFE_COLOR,
+        SafetyLevel::Caution => CAUTION_COLOR,
+        SafetyLevel::Danger => DANGER_COLOR,
+        SafetyLevel::Error => ERROR_COLOR,
+    }
+}

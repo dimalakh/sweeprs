@@ -297,7 +297,7 @@ fn interactive_confirm(category_groups: &[(Category, Vec<&ScannedEntry>)]) -> Re
 }
 
 /// Check if a filesystem path requires root privileges to modify.
-fn needs_root(path: &Path) -> bool {
+pub fn needs_root(path: &Path) -> bool {
     let path_str = path.display().to_string();
     // System directories that require elevated permissions
     path_str.starts_with("/Library/")
@@ -544,7 +544,7 @@ fn run_slow_operations(entries: &[&ScannedEntry], cleaned: &AtomicU64, config: &
 }
 
 /// Measure how many bytes were freed by a clean operation on an entry.
-fn measure_freed(entry: &ScannedEntry, result: &Result<(), io::Error>) -> u64 {
+pub fn measure_freed(entry: &ScannedEntry, result: &Result<(), io::Error>) -> u64 {
     if result.is_ok() && !entry.path.exists() {
         // Fully removed
         return entry.size;
