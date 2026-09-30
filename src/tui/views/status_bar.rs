@@ -15,13 +15,24 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     let mut spans = Vec::new();
 
     if app.scanning {
+        let verb = if app.streaming {
+            "Scanning"
+        } else {
+            "Rescanning"
+        };
         spans.push(Span::styled(
             format!(
-                " Scanning {}/{} rules",
+                " {verb} {}/{} rules",
                 app.scan_rules_done, app.scan_rules_total
             ),
             Style::default().fg(theme::ACCENT).bold(),
         ));
+        if !app.streaming {
+            spans.push(Span::styled(
+                ", showing previous results",
+                Style::default().fg(theme::DIM),
+            ));
+        }
         spans.push(Span::styled(" | ", Style::default().fg(theme::DIM)));
     }
 

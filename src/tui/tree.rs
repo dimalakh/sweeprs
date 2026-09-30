@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use indexmap::IndexMap;
+use rustc_hash::FxHashSet;
 
 use crate::scanner::entry::{Category, SafetyLevel, ScanResult, ScannedEntry};
 
@@ -66,6 +67,34 @@ pub enum RowRef {
     Category(usize),
     Group(usize, usize),
     Entry(usize, usize, usize),
+}
+
+/// What the user has done to the tree, keyed by identity rather than by
+/// position, so it survives rebuilding the tree from a newer scan result.
+#[derive(Debug, Default)]
+pub struct TreeState {
+    checked: FxHashSet<PathBuf>,
+    collapsed: FxHashSet<Category>,
+    expanded: FxHashSet<(Category, String)>,
+}
+
+/// A row named by what it shows, for finding the same row after a rebuild.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RowKey {
+    Category(Category),
+    Group(Category, String),
+    Entry(Category, String, PathBuf),
+}
+
+impl RowKey {
+    /// The row this one sits under, for when it has gone from the tree.
+    fn parent(&self) -> Option<Self> {
+        match self {
+            Self::Category(_) => None,
+            Self::Group(category, _) => Some(Self::Category(*category)),
+            Self::Entry(category, group, _) => Some(Self::Group(*category, group.clone())),
+        }
+    }
 }
 
 impl Tree {
@@ -195,6 +224,82 @@ impl Tree {
             }
             cat.hidden = !any_visible;
         }
+    }
+
+    pub fn state(&self) -> TreeState {
+        let mut state = TreeState::default();
+        for cat in &self.categories {
+            if !cat.expanded {
+                state.collapsed.insert(cat.category);
+            }
+            for group in &cat.groups {
+                if group.expanded {
+                    state.expanded.insert((cat.category, group.name.clone()));
+                }
+                state.checked.extend(
+                    group
+                        .entries
+                        .iter()
+                        .filter(|e| e.checked)
+                        .map(|e| e.path.clone()),
+                );
+            }
+        }
+        state
+    }
+
+    /// Reapply expansion and selection from before a rebuild. Entries that no
+    /// longer exist simply stay unselected.
+    pub fn restore(&mut self, state: &TreeState) {
+        for cat in &mut self.categories {
+            cat.expanded = !state.collapsed.contains(&cat.category);
+            for group in &mut cat.groups {
+                group.expanded = state.expanded.contains(&(cat.category, group.name.clone()));
+                for entry in &mut group.entries {
+                    entry.checked = entry.selectable() && state.checked.contains(&entry.path);
+                }
+            }
+        }
+        self.cached_rows = None;
+        self.invalidate_checks();
+    }
+
+    pub fn row_key(&self, row: RowRef) -> RowKey {
+        match row {
+            RowRef::Category(ci) => RowKey::Category(self.categories[ci].category),
+            RowRef::Group(ci, gi) => {
+                let cat = &self.categories[ci];
+                RowKey::Group(cat.category, cat.groups[gi].name.clone())
+            }
+            RowRef::Entry(ci, gi, ei) => {
+                let cat = &self.categories[ci];
+                let group = &cat.groups[gi];
+                RowKey::Entry(
+                    cat.category,
+                    group.name.clone(),
+                    group.entries[ei].path.clone(),
+                )
+            }
+        }
+    }
+
+    /// Where `key` is among the visible rows, exactly.
+    pub fn position(&mut self, key: &RowKey) -> Option<usize> {
+        let visible = self.visible_rows();
+        visible.iter().position(|row| self.row_key(*row) == *key)
+    }
+
+    /// Where `key` is among the visible rows, or failing that its nearest
+    /// visible ancestor.
+    pub fn find_row(&mut self, key: &RowKey) -> Option<usize> {
+        let mut wanted = Some(key.clone());
+        while let Some(key) = wanted {
+            if let Some(index) = self.position(&key) {
+                return Some(index);
+            }
+            wanted = key.parent();
+        }
+        None
     }
 
     /// Returns a shared reference to visible rows. Callers share the same Rc
@@ -490,5 +595,96 @@ mod tests {
             .expect("refused entry");
         tree.toggle(RowRef::Entry(0, 0, refused));
         assert_eq!(tree.selected_entries().len(), 1);
+    }
+
+    fn result(entries: Vec<ScannedEntry>) -> ScanResult {
+        ScanResult {
+            total_size: entries.iter().map(|e| e.size).sum(),
+            entries,
+            disk_info: None,
+            scan_duration_secs: None,
+        }
+    }
+
+    fn cache(path: &str, description: &str, size: u64) -> ScannedEntry {
+        ScannedEntry {
+            path: PathBuf::from(path),
+            size,
+            category: Category::PackageCache,
+            safety: SafetyLevel::Safe,
+            description: description.to_owned(),
+            item_count: None,
+        }
+    }
+
+    #[test]
+    fn selection_and_expansion_survive_a_rebuild_from_a_newer_scan() {
+        let before = result(vec![
+            cache("/home/me/.npm/_cacache", "npm cache", 30),
+            cache("/home/me/.cache/pip", "pip cache", 20),
+            entry("/home/me/.cursor/worktrees/app/wip", SafetyLevel::Danger),
+        ]);
+        let mut tree = Tree::from_scan_result(&before);
+        let npm = tree.find_row(&RowKey::Group(Category::PackageCache, "npm cache".into()));
+        let row = tree.visible_rows()[npm.expect("npm row")];
+        tree.toggle(row);
+        let agents = tree
+            .find_row(&RowKey::Category(Category::AgentSession))
+            .expect("agent row");
+        let row = tree.visible_rows()[agents];
+        tree.collapse(row);
+        let pip = tree
+            .find_row(&RowKey::Group(Category::PackageCache, "pip cache".into()))
+            .expect("pip row");
+        let row = tree.visible_rows()[pip];
+        tree.expand(row);
+        let state = tree.state();
+
+        // A rescan finds something new, sizes shift, and the order changes.
+        let after = result(vec![
+            cache("/home/me/.cargo/registry", "Cargo cache", 90),
+            cache("/home/me/.npm/_cacache", "npm cache", 35),
+            cache("/home/me/.cache/pip", "pip cache", 20),
+            entry("/home/me/.cursor/worktrees/app/wip", SafetyLevel::Danger),
+        ]);
+        let mut rebuilt = Tree::from_scan_result(&after);
+        rebuilt.restore(&state);
+
+        let selected: Vec<PathBuf> = rebuilt
+            .selected_entries()
+            .into_iter()
+            .map(|e| e.path)
+            .collect();
+        assert_eq!(selected, [PathBuf::from("/home/me/.npm/_cacache")]);
+        let agents = rebuilt
+            .categories
+            .iter()
+            .find(|c| c.category == Category::AgentSession)
+            .expect("agents");
+        assert!(!agents.expanded);
+        let pip_row = rebuilt
+            .find_row(&RowKey::Entry(
+                Category::PackageCache,
+                "pip cache".into(),
+                PathBuf::from("/home/me/.cache/pip"),
+            ))
+            .expect("pip entry visible because its group stayed expanded");
+        assert!(pip_row > 0);
+    }
+
+    #[test]
+    fn a_row_that_disappears_is_found_through_its_parent() {
+        let mut tree = Tree::from_scan_result(&result(vec![cache(
+            "/home/me/.npm/_cacache",
+            "npm cache",
+            30,
+        )]));
+        let gone = RowKey::Entry(
+            Category::PackageCache,
+            "npm cache".into(),
+            PathBuf::from("/home/me/.npm/deleted"),
+        );
+        let group = tree.find_row(&RowKey::Group(Category::PackageCache, "npm cache".into()));
+        assert_eq!(tree.find_row(&gone), group);
     }
 }
