@@ -1,6 +1,11 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [0.8.1] - 2026-09-30
+
+### Bug Fixes
+
+- *(tui)* Delete on a worker thread and show progress while it runs
 ## [0.8.0] - 2026-09-29
 
 ### Features
